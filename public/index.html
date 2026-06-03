@@ -570,13 +570,13 @@ function handleMsg(data) {
         const badge = document.getElementById('badge-'+data.channel);
         if (badge) { badge.textContent = unread[data.channel]; badge.classList.add('show'); }
       }
-      if (data.name !== me.name) showNotif(`${data.name}: ${data.text.slice(0,40)}`);
+      if ((data.username || data.name) !== me.name) showNotif(`${data.username || data.name}: ${data.text.slice(0,40)}`);
       break;
 
     case 'dm': {
-      const isFromMe = data.fromTag === me.tag;
-      const otherTag = isFromMe ? data.to : data.fromTag;
-      if (dmMode && dmWith && dmWith.tag === otherTag) {
+      const isFromMe = data.from === me.name;
+      const otherTag = isFromMe ? data.to : data.from;
+      if (dmMode && dmWith && dmWith.username === otherTag) {
         renderDmMsg(data, isFromMe); scrollBottom();
       } else if (!isFromMe) {
         dmUnread[otherTag] = (dmUnread[otherTag]||0)+1;
@@ -589,7 +589,7 @@ function handleMsg(data) {
     case 'dm_history':
       document.getElementById('messages').innerHTML = '';
       addDaySep();
-      data.history.forEach(m => renderDmMsg(m, m.fromTag === me.tag));
+      data.history.forEach(m => renderDmMsg(m, m.from === me.name));
       scrollBottom();
       break;
 
@@ -611,16 +611,16 @@ function handleMsg(data) {
       break;
 
     case 'typing':
-      if (!dmMode && data.channel === me.channel) showTyping(data.name);
+      if (!dmMode && data.channel === me.channel) showTyping(data.username || data.name);
       break;
 
     case 'dm_typing':
-      if (dmMode && dmWith && dmWith.tag === data.fromTag) showTyping(data.from);
+      if (dmMode && dmWith && dmWith.username === data.from) showTyping(data.from);
       break;
 
     case 'friend_request': {
-      pendingRequest = { name: data.from, tag: data.fromTag, color: data.fromColor };
-      document.getElementById('friend-req-name').textContent = `${data.from} (${data.fromTag})`;
+      pendingRequest = { name: data.from, username: data.from, color: data.fromColor };
+      document.getElementById('friend-req-name').textContent = data.from;
       const req = document.getElementById('friend-req');
       req.classList.add('show');
       setTimeout(() => req.classList.remove('show'), 12000);
@@ -628,10 +628,10 @@ function handleMsg(data) {
     }
 
     case 'friend_accepted': {
-      friends[data.tag] = { name: data.name, color: data.color, online: true };
+      friends[data.username] = { name: data.username, username: data.username, color: data.color, online: true };
       renderFriendsPanel();
       renderDmList();
-      showNotif(`${data.name} принял заявку!`, true);
+      showNotif(`${data.username} принял заявку!`, true);
       break;
     }
   }
@@ -640,10 +640,10 @@ function handleMsg(data) {
 // ── RENDER CHANNEL MSG ──
 function renderMsg(data, isHistory) {
   const msgs = document.getElementById('messages');
-  const isCompact = lastMsgAuthor === data.name;
-  lastMsgAuthor = data.name;
-  const isOwn = data.tag === me.tag;
-  const initials = data.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+  const isCompact = lastMsgAuthor === (data.username || data.name);
+  lastMsgAuthor = data.username || data.name;
+  const isOwn = data.username === me.name;
+  const initials = (data.username || data.name || '?')[0].toUpperCase();
   const bgColor = colorToBg(data.color);
   const div = document.createElement('div');
   div.className = 'msg' + (isCompact?' compact':'');
@@ -651,7 +651,7 @@ function renderMsg(data, isHistory) {
     <div class="msg-av" style="background:${bgColor};color:${data.color}">${initials}</div>
     <div class="msg-body">
       ${!isCompact?`<div class="msg-meta">
-        <span class="msg-name" style="color:${data.color}">${esc(data.name)}</span>
+        <span class="msg-name" style="color:${data.color}">${esc(data.username || data.name)}</span>
         <span class="msg-time">${data.time}</span>
       </div>`:''}
       <div class="msg-text${isOwn?' own':''}">${esc(data.text)}</div>
@@ -666,7 +666,7 @@ function renderDmMsg(data, isOwn) {
   const color = isOwn ? me.color : data.fromColor;
   const isCompact = lastMsgAuthor === name;
   lastMsgAuthor = name;
-  const initials = name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+  const initials = (name||'?')[0].toUpperCase();
   const div = document.createElement('div');
   div.className = 'msg' + (isCompact?' compact':'');
   div.innerHTML = `
@@ -710,7 +710,7 @@ function sendMessage() {
   const text = inp.value.trim();
   if (!text || !ws || ws.readyState !== 1) return;
   if (dmMode && dmWith) {
-    ws.send(JSON.stringify({ type:'dm', to: dmWith.tag, text }));
+    ws.send(JSON.stringify({ type:'dm', to: dmWith.username, text }));
   } else {
     ws.send(JSON.stringify({ type:'message', text, channel: me.channel }));
   }
@@ -726,7 +726,7 @@ function handleTyping() {
   if (!ws || ws.readyState !== 1) return;
   clearTimeout(typingTimer);
   if (dmMode && dmWith) {
-    ws.send(JSON.stringify({ type:'typing', dm:true, to: dmWith.tag }));
+    ws.send(JSON.stringify({ type:'typing', dm:true, to: dmWith.username }));
   } else {
     ws.send(JSON.stringify({ type:'typing', channel: me.channel }));
   }
@@ -759,7 +759,7 @@ function openDm(tag) {
   const friend = friends[tag];
   if (!friend) return;
   dmMode = true;
-  dmWith = { tag, ...friend };
+  dmWith = { tag, username: tag, ...friend };
   lastMsgAuthor = '';
 
   document.querySelectorAll('.ch-item').forEach(el => el.classList.remove('active'));
@@ -778,7 +778,7 @@ function openDm(tag) {
   renderDmList();
 
   // Запросить историю
-  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type:'dm_history', withTag: tag }));
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type:'dm_history', withUsername: tag }));
 }
 
 // ── USERS ──
@@ -790,28 +790,28 @@ function updateUserList(users) {
   document.getElementById('modal-online-count').textContent = users.length;
 
   // Обновить онлайн-статус друзей
-  const onlineTags = new Set(users.map(u => u.tag));
+  const onlineTags = new Set(users.map(u => u.username));
   for (const tag in friends) {
     friends[tag].online = onlineTags.has(tag);
   }
   renderFriendsPanel();
 
   users.forEach(u => {
-    if (u.tag === me.tag) return; // не показывать себя
-    const initials = u.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
-    const isFriend = !!friends[u.tag];
+    if (u.username === me.name) return; // не показывать себя
+    const initials = (u.username || u.name || '?')[0].toUpperCase();
+    const isFriend = !!friends[u.username];
     const div = document.createElement('div');
     div.className = 'user-item';
     div.innerHTML = `
       <div class="f-av online${isFriend?' friend-dot':''}" style="background:${colorToBg(u.color)};color:${u.color}">${initials}</div>
       <div style="flex:1;min-width:0">
-        <div class="f-name">${esc(u.name)}</div>
+        <div class="f-name">${esc(u.username || u.name)}</div>
         <div class="f-ch">#${esc(u.channel)}</div>
       </div>
       ${isFriend
-        ? `<button class="dm-btn" onclick="openDm('${esc(u.tag)}')" title="Написать">ЛС</button>
-           <button class="add-friend-btn is-friend" onclick="removeFriend('${esc(u.tag)}')" title="Удалить из друзей">✓</button>`
-        : `<button class="add-friend-btn" onclick="sendFriendRequest('${esc(u.tag)}','${esc(u.name)}','${esc(u.color)}')" title="Добавить в друзья">+</button>`
+        ? `<button class="dm-btn" onclick="openDm('${esc(u.username)}')" title="Написать">ЛС</button>
+           <button class="add-friend-btn is-friend" onclick="removeFriend('${esc(u.username)}')" title="Удалить из друзей">✓</button>`
+        : `<button class="add-friend-btn" onclick="sendFriendRequest('${esc(u.username)}','${esc(u.username)}','${esc(u.color)}')" title="Добавить в друзья">+</button>`
       }`;
     list.appendChild(div);
   });
@@ -821,14 +821,14 @@ function updateUserList(users) {
 function sendFriendRequest(tag, name, color) {
   if (!ws || ws.readyState !== 1) return;
   // Отправляем через публичный канал как системное событие (простая реализация)
-  ws.send(JSON.stringify({ type:'friend_request_send', toTag: tag, from: me.name, fromTag: me.tag, fromColor: me.color }));
+  ws.send(JSON.stringify({ type:'friend_request_send', toUsername: tag }));
   showNotif(`Заявка отправлена → ${name}`);
 }
 
 function acceptFriend() {
   if (!pendingRequest) return;
-  friends[pendingRequest.tag] = { name: pendingRequest.name, color: pendingRequest.color, online: true };
-  ws.send(JSON.stringify({ type:'friend_accept', toTag: pendingRequest.tag, name: me.name, tag: me.tag, color: me.color }));
+  friends[pendingRequest.username] = { name: pendingRequest.name, username: pendingRequest.username, color: pendingRequest.color, online: true };
+  ws.send(JSON.stringify({ type:'friend_accept', toUsername: pendingRequest.username }));
   document.getElementById('friend-req').classList.remove('show');
   renderFriendsPanel();
   renderDmList();
@@ -861,14 +861,14 @@ function renderFriendsPanel() {
   list.innerHTML = '';
   tags.forEach(tag => {
     const f = friends[tag];
-    const initials = f.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+    const initials = (f.name || tag || '?')[0].toUpperCase();
     const div = document.createElement('div');
     div.className = 'friend-card';
     div.onclick = () => openDm(tag);
     div.innerHTML = `
       <div class="friend-card-av" style="background:${colorToBg(f.color)};color:${f.color}">${initials}</div>
       <div style="flex:1;min-width:0">
-        <div class="friend-card-name">${esc(f.name)}</div>
+        <div class="friend-card-name">${esc(f.name || tag)}</div>
         <div class="friend-card-status ${f.online?'online':'offline'}">${f.online?'онлайн':'офлайн'}</div>
       </div>
       <button class="friend-remove" onclick="event.stopPropagation();removeFriend('${esc(tag)}')" title="Удалить"><i class="ti ti-x"></i></button>`;
@@ -885,7 +885,7 @@ function renderDmList() {
   list.innerHTML = '';
   tags.forEach(tag => {
     const f = friends[tag];
-    const initials = f.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+    const initials = (f.name || tag || '?')[0].toUpperCase();
     const unreadCount = dmUnread[tag] || 0;
     const div = document.createElement('div');
     div.className = 'dm-item ch-item' + (dmMode && dmWith && dmWith.tag === tag ? ' active' : '');
@@ -924,9 +924,9 @@ function updateMyProfile() {
     if (id === 'my-avatar-btn') el.style.borderColor = me.color;
   });
   document.getElementById('profile-name').textContent = me.name;
-  document.getElementById('profile-tag').textContent = me.tag;
+  document.getElementById('profile-tag').textContent = me.name;
   document.getElementById('setting-name').value = me.name;
-  document.getElementById('setting-tag-display').textContent = me.tag;
+  document.getElementById('setting-tag-display').textContent = me.name;
 }
 
 // ── MODAL ──
