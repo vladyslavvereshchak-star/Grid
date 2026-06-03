@@ -554,6 +554,19 @@ body::before{
 .vo-btn-leave:hover{background:#2a0a18;box-shadow:0 0 20px #ff446640}
 
 /* ══════════════════════════════════════
+   DELETE ANIMATION
+══════════════════════════════════════ */
+@keyframes msg-disintegrate {
+  0%{opacity:1;filter:blur(0);transform:scale(1)}
+  50%{opacity:0.5;filter:blur(2px);transform:scale(1.02)}
+  100%{opacity:0;filter:blur(8px);transform:scale(0.95);max-height:0;margin:0;padding:0}
+}
+.msg-deleting{animation:msg-disintegrate 0.4s ease-out forwards!important;pointer-events:none}
+.msg-wrap:hover .msg-delete-btn{opacity:1}
+.msg-delete-btn{opacity:0;position:absolute;right:8px;top:6px;background:#1a0808;border:1px solid #f0446640;color:#f04466;border-radius:4px;padding:2px 6px;font-size:10px;cursor:pointer;transition:opacity 0.2s;font-family:'Syne',sans-serif}
+.msg-wrap{position:relative}
+
+/* ══════════════════════════════════════
    ADD FRIEND BY USERNAME
 ══════════════════════════════════════ */
 .add-friend-box{padding:10px 14px;border-bottom:1px solid var(--border);display:flex;gap:6px}
@@ -806,9 +819,21 @@ body::before{
         </div>
         <div class="setting-row">
           <div>
-            <div class="setting-label">Твой тег</div>
+            <div class="setting-label">Твой ник</div>
             <div style="font-size:11px;color:var(--text3);font-family:'Space Mono',monospace;margin-top:2px" id="setting-tag-display">—</div>
           </div>
+        </div>
+        <div style="margin-top:18px;padding-top:18px;border-top:1px solid var(--border)">
+          <div class="modal-section-title">Сменить пароль</div>
+          <input class="field" id="new-password-input" type="password" placeholder="Новый пароль (мин. 6 символов)" style="margin-bottom:8px"/>
+          <input class="field" id="new-password-confirm" type="password" placeholder="Повтори пароль"/>
+          <div id="change-pass-error" style="color:#f05a5a;font-size:11px;margin:6px 0;min-height:14px"></div>
+          <button class="lang-btn active" onclick="changePassword()">Сменить пароль</button>
+        </div>
+        <div style="margin-top:18px;padding-top:18px;border-top:1px solid var(--border)">
+          <button onclick="logout()" style="background:#1a0a0a;border:1px solid #f0446640;color:#f04466;border-radius:8px;padding:10px 20px;font-size:13px;cursor:pointer;font-family:'Syne',sans-serif;width:100%;transition:all 0.2s" onmouseover="this.style.background='#f04466';this.style.color='#fff'" onmouseout="this.style.background='#1a0a0a';this.style.color='#f04466'">
+            <i class="ti ti-logout"></i> Выйти из аккаунта
+          </button>
         </div>
       </div>
       <div class="pane" id="pane-hotkeys">
@@ -1285,6 +1310,13 @@ function renderMsg(data, isHistory) {
       </div>`:''}
       <div class="msg-text${isOwn?' own':''}">${esc(data.text)}</div>
     </div>`;
+  if (data.username === me.name) {
+    const delBtn = document.createElement('button');
+    delBtn.className = 'msg-delete-btn';
+    delBtn.textContent = '✕';
+    delBtn.onclick = () => { div.classList.add('msg-deleting'); setTimeout(()=>div.remove(),400); };
+    div.appendChild(delBtn);
+  }
   msgs.appendChild(div);
 }
 
@@ -1527,6 +1559,97 @@ function switchTab(id, el) {
   el.classList.add('active');
   document.getElementById('pane-'+id).classList.add('active');
 }
+function logout() {
+  localStorage.removeItem('grid_token');
+  localStorage.removeItem('grid_username');
+  localStorage.removeItem('grid_color');
+  if (ws) ws.close();
+  location.reload();
+}
+
+async function changePassword() {
+  const p1 = document.getElementById('new-password-input').value;
+  const p2 = document.getElementById('new-password-confirm').value;
+  const err = document.getElementById('change-pass-error');
+  if (p1.length < 6) { err.textContent = 'Минимум 6 символов'; return; }
+  if (p1 !== p2) { err.textContent = 'Пароли не совпадают'; return; }
+  err.textContent = '';
+  try {
+    const token = localStorage.getItem('grid_token');
+    const res = await fetch('/api/change-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ password: p1 })
+    });
+    const data = await res.json();
+    if (!res.ok) { err.textContent = data.error || 'Ошибка'; return; }
+    err.style.color = 'var(--accent)';
+    err.textContent = 'Пароль изменён!';
+    document.getElementById('new-password-input').value = '';
+    document.getElementById('new-password-confirm').value = '';
+    setTimeout(() => { err.textContent = ''; err.style.color = '#f05a5a'; }, 3000);
+  } catch(e) { err.textContent = 'Ошибка соединения'; }
+}
+
+// ── KINETIC SCROLL ──
+(function() {
+  let vel = 0, last = 0, raf = null;
+  function applyKinetic(el) {
+    el.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      vel += e.deltaY * 0.8;
+      if (!raf) animate(el);
+    }, { passive: false });
+  }
+  function animate(el) {
+    vel *= 0.88;
+    el.scrollTop += vel;
+    if (Math.abs(vel) > 0.5) {
+      raf = requestAnimationFrame(() => animate(el));
+    } else {
+      vel = 0; raf = null;
+    }
+  }
+  window.addEventListener('load', () => {
+    const msgs = document.getElementById('messages');
+    if (msgs) applyKinetic(msgs);
+  });
+})();
+
+// ── EASTER EGG: Ctrl+Shift+G ──
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey && e.shiftKey && e.key === 'G') {
+    e.preventDefault();
+    showRadarEasterEgg();
+  }
+});
+function showRadarEasterEgg() {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:#000a;z-index:9999;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:20px;font-family:Space Mono,monospace';
+  const ping = Math.round(Math.random() * 30 + 5);
+  const cpu = Math.round(Math.random() * 40 + 10);
+  overlay.innerHTML = `
+    <svg width="120" height="120" viewBox="0 0 120 120">
+      <circle cx="60" cy="60" r="55" stroke="#00e896" stroke-width="1" fill="none" opacity="0.3"/>
+      <circle cx="60" cy="60" r="38" stroke="#00e896" stroke-width="1" fill="none" opacity="0.2"/>
+      <circle cx="60" cy="60" r="20" stroke="#00e896" stroke-width="1" fill="none" opacity="0.2"/>
+      <line x1="60" y1="60" x2="115" y2="60" stroke="#00e896" stroke-width="1.5" opacity="0.6">
+        <animateTransform attributeName="transform" type="rotate" from="0 60 60" to="360 60 60" dur="2s" repeatCount="3"/>
+      </line>
+      <circle cx="60" cy="60" r="3" fill="#00e896"/>
+    </svg>
+    <div style="color:#00e896;font-size:13px;letter-spacing:2px">GRID NETWORK SCAN</div>
+    <div style="color:#5a7a6a;font-size:11px">PING: <span style="color:#00e896">${ping}ms</span> &nbsp;|&nbsp; CPU: <span style="color:#00e896">${cpu}%</span></div>
+    <div style="color:#2a3a32;font-size:10px;margin-top:10px">нажми любую клавишу чтобы закрыть</div>
+  `;
+  document.body.appendChild(overlay);
+  const close = () => { overlay.remove(); document.removeEventListener('keydown', close); overlay.removeEventListener('click', close); };
+  setTimeout(() => {
+    document.addEventListener('keydown', close, { once: true });
+    overlay.addEventListener('click', close);
+  }, 500);
+}
+
 function saveDisplayName() {
   const val = document.getElementById('setting-name').value.trim();
   if (!val) return;
