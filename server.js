@@ -2,20 +2,96 @@ const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const { Pool } = require('pg');
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
 app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.json());
 
-const channels = { 'общий': [], 'игры': [], 'фидбек': [] };
-const onlineUsers = new Map(); // ws -> { name, tag, color, channel }
-const dmHistory = new Map();   // "tag1|tag2" -> []
+const JWT_SECRET = process.env.JWT_SECRET || 'grid-secret-key-change-in-prod';
 
-function dmKey(t1, t2) {
-  return [t1, t2].sort().join('|');
+// PostgreSQL
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
+});
+
+// Инициализация таблиц
+async function initDB() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      username VARCHAR(50) UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      color VARCHAR(20) NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS friends (
+      user1_id INTEGER REFERENCES users(id),
+      user2_id INTEGER REFERENCES users(id),
+      PRIMARY KEY (user1_id, user2_id)
+    );
+  `);
+  console.log('✅ БД готова');
 }
+
+initDB().catch(console.error);
+
+// REST API — Регистрация
+app.post('/api/register', async (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) return res.status(400).json({ error: 'Введи логин и пароль' });
+  if (username.length < 3) return res.status(400).json({ error: 'Логин минимум 3 символа' });
+  if (password.length < 6) return res.status(400).json({ error: 'Пароль минимум 6 символов' });
+
+  try {
+    const colors = ['#4af0c0','#6ab4ff','#f0b44a','#c084fc','#f06a8a','#7af06a'];
+    const color = colors[Math.floor(Math.random() * colors.length)];
+    const hash = await bcrypt.hash(password, 10);
+    const result = await pool.query(
+      'INSERT INTO users (username, password_hash, color) VALUES ($1, $2, $3) RETURNING id, username, color',
+      [username, hash, color]
+    );
+    const user = result.rows[0];
+    const token = jwt.sign({ id: user.id, username: user.username, color: user.color }, JWT_SECRET);
+    res.json({ token, username: user.username, color: user.color });
+  } catch (e) {
+    if (e.code === '23505') return res.status(400).json({ error: 'Такой логин уже занят' });
+    console.error(e);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// REST API — Вход
+app.post('/api/login', async (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) return res.status(400).json({ error: 'Введи логин и пароль' });
+
+  try {
+    const result = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
+    if (result.rows.length === 0) return res.status(401).json({ error: 'Неверный логин или пароль' });
+    const user = result.rows[0];
+    const ok = await bcrypt.compare(password, user.password_hash);
+    if (!ok) return res.status(401).json({ error: 'Неверный логин или пароль' });
+    const token = jwt.sign({ id: user.id, username: user.username, color: user.color }, JWT_SECRET);
+    res.json({ token, username: user.username, color: user.color });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// Каналы и онлайн юзеры (в памяти)
+const channels = { 'общий': [], 'игры': [], 'фидбек': [] };
+const onlineUsers = new Map(); // ws -> { id, username, color, channel }
+const dmHistory = new Map();
+
+function dmKey(a, b) { return [a, b].sort().join('|'); }
 
 function broadcast(data, excludeWs = null) {
   const msg = JSON.stringify(data);
@@ -32,55 +108,53 @@ function sendTo(ws, data) {
 
 function getUserList() {
   return Array.from(onlineUsers.values()).map(u => ({
-    name: u.name, tag: u.tag, color: u.color, channel: u.channel
+    username: u.username, color: u.color, channel: u.channel
   }));
 }
 
-function findWsByTag(tag) {
+function findWsByUsername(username) {
   for (const [ws, u] of onlineUsers) {
-    if (u.tag === tag) return ws;
+    if (u.username === username) return ws;
   }
   return null;
 }
 
-wss.on('connection', (ws) => {
-  console.log('+ подключение');
-
+// WebSocket — проверка токена при подключении
+wss.on('connection', (ws, req) => {
   ws.on('message', (raw) => {
     let data;
     try { data = JSON.parse(raw); } catch { return; }
 
-    switch (data.type) {
-
-      case 'join': {
-        const tag = data.name.replace(/\s/g, '') + '#' + String(Math.floor(Math.random() * 9999)).padStart(4, '0');
-        const colors = ['#4af0c0','#6ab4ff','#f0b44a','#c084fc','#f06a8a','#7af06a'];
-        const color = colors[Math.floor(Math.random() * colors.length)];
-        onlineUsers.set(ws, { name: data.name, tag, color, channel: 'общий' });
-
+    // Аутентификация
+    if (data.type === 'auth') {
+      try {
+        const user = jwt.verify(data.token, JWT_SECRET);
+        onlineUsers.set(ws, { id: user.id, username: user.username, color: user.color, channel: 'общий' });
         sendTo(ws, {
           type: 'welcome',
-          name: data.name,
-          tag,
-          color,
+          username: user.username,
+          color: user.color,
           history: channels['общий'].slice(-50)
         });
-
-        broadcast({ type: 'user_joined', name: data.name, tag, color, users: getUserList() });
-        broadcast({ type: 'system', text: `${data.name} зашёл в сеть`, channel: 'общий' });
-        console.log(`Вошёл: ${data.name} (${tag})`);
-        break;
+        broadcast({ type: 'user_joined', username: user.username, color: user.color, users: getUserList() });
+        broadcast({ type: 'system', text: `${user.username} зашёл в сеть`, channel: 'общий' });
+      } catch {
+        sendTo(ws, { type: 'auth_error', error: 'Неверный токен' });
+        ws.close();
       }
+      return;
+    }
 
+    const user = onlineUsers.get(ws);
+    if (!user) return; // не авторизован
+
+    switch (data.type) {
       case 'message': {
-        const user = onlineUsers.get(ws);
-        if (!user) break;
         const ch = data.channel || user.channel;
         const msg = {
           type: 'message',
           id: Date.now() + Math.random(),
-          name: user.name,
-          tag: user.tag,
+          username: user.username,
           color: user.color,
           text: data.text,
           channel: ch,
@@ -90,51 +164,35 @@ wss.on('connection', (ws) => {
         channels[ch].push(msg);
         if (channels[ch].length > 200) channels[ch].shift();
         broadcast(msg);
-        sendTo(ws, msg);
         break;
       }
 
       case 'dm': {
-        // Личное сообщение
-        const sender = onlineUsers.get(ws);
-        if (!sender) break;
-        const recipientWs = findWsByTag(data.to);
-        const key = dmKey(sender.tag, data.to);
+        const recipientWs = findWsByUsername(data.to);
+        const key = dmKey(user.username, data.to);
         const msg = {
           type: 'dm',
           id: Date.now() + Math.random(),
-          from: sender.name,
-          fromTag: sender.tag,
-          fromColor: sender.color,
+          from: user.username,
+          fromColor: user.color,
           to: data.to,
           text: data.text,
           time: new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })
         };
         if (!dmHistory.has(key)) dmHistory.set(key, []);
-        const hist = dmHistory.get(key);
-        hist.push(msg);
-        if (hist.length > 200) hist.shift();
-
-        // Отправить отправителю
+        dmHistory.get(key).push(msg);
         sendTo(ws, msg);
-        // Отправить получателю (если онлайн)
         if (recipientWs) sendTo(recipientWs, msg);
         break;
       }
 
       case 'dm_history': {
-        // Запрос истории ЛС
-        const user = onlineUsers.get(ws);
-        if (!user) break;
-        const key = dmKey(user.tag, data.withTag);
-        const hist = dmHistory.get(key) || [];
-        sendTo(ws, { type: 'dm_history', withTag: data.withTag, history: hist.slice(-50) });
+        const key = dmKey(user.username, data.withUsername);
+        sendTo(ws, { type: 'dm_history', withUsername: data.withUsername, history: (dmHistory.get(key) || []).slice(-50) });
         break;
       }
 
       case 'switch_channel': {
-        const user = onlineUsers.get(ws);
-        if (!user) break;
         user.channel = data.channel;
         broadcast({ type: 'users', users: getUserList() });
         sendTo(ws, {
@@ -146,45 +204,27 @@ wss.on('connection', (ws) => {
       }
 
       case 'typing': {
-        const user = onlineUsers.get(ws);
-        if (!user) break;
         if (data.dm) {
-          const recipientWs = findWsByTag(data.to);
-          if (recipientWs) sendTo(recipientWs, { type: 'dm_typing', from: user.name, fromTag: user.tag });
+          const recipientWs = findWsByUsername(data.to);
+          if (recipientWs) sendTo(recipientWs, { type: 'dm_typing', from: user.username });
         } else {
-          broadcast({ type: 'typing', name: user.name, channel: data.channel }, ws);
+          broadcast({ type: 'typing', username: user.username, channel: data.channel }, ws);
         }
         break;
       }
 
       case 'friend_request_send': {
-        // Переслать заявку конкретному юзеру
-        const sender = onlineUsers.get(ws);
-        if (!sender) break;
-        const targetWs = findWsByTag(data.toTag);
+        const targetWs = findWsByUsername(data.toUsername);
         if (targetWs) {
-          sendTo(targetWs, {
-            type: 'friend_request',
-            from: sender.name,
-            fromTag: sender.tag,
-            fromColor: sender.color
-          });
+          sendTo(targetWs, { type: 'friend_request', from: user.username, fromColor: user.color });
         }
         break;
       }
 
       case 'friend_accept': {
-        // Сообщить отправителю что заявка принята
-        const accepter = onlineUsers.get(ws);
-        if (!accepter) break;
-        const requesterWs = findWsByTag(data.toTag);
+        const requesterWs = findWsByUsername(data.toUsername);
         if (requesterWs) {
-          sendTo(requesterWs, {
-            type: 'friend_accepted',
-            name: accepter.name,
-            tag: accepter.tag,
-            color: accepter.color
-          });
+          sendTo(requesterWs, { type: 'friend_accepted', username: user.username, color: user.color });
         }
         break;
       }
@@ -194,20 +234,14 @@ wss.on('connection', (ws) => {
   ws.on('close', () => {
     const user = onlineUsers.get(ws);
     if (user) {
-      broadcast({ type: 'system', text: `${user.name} вышел`, channel: 'общий' });
-      broadcast({ type: 'user_left', tag: user.tag, users: getUserList() });
+      broadcast({ type: 'system', text: `${user.username} вышел`, channel: 'общий' });
+      broadcast({ type: 'user_left', username: user.username, users: getUserList() });
       onlineUsers.delete(ws);
-      console.log(`- вышел: ${user.name}`);
     }
   });
 });
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`\n✅ Grid сервер запущен`);
-  console.log(`📡 Открой в браузере: http://localhost:${PORT}`);
-  console.log(`🌐 Друзья в сети: http://[ТВОЙ_IP]:${PORT}\n`);
+  console.log(`\n✅ Grid сервер запущен на порту ${PORT}`);
 });
-
-// Патч: добавить обработку friend_request/accept в wss.on message
-// (уже включено в основной server.js выше через switch-case)
