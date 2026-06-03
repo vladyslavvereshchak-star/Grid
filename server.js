@@ -15,13 +15,11 @@ app.use(express.json());
 
 const JWT_SECRET = process.env.JWT_SECRET || 'grid-secret-key-change-in-prod';
 
-// PostgreSQL
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
 });
 
-// Инициализация таблиц
 async function initDB() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
@@ -42,7 +40,6 @@ async function initDB() {
 
 initDB().catch(console.error);
 
-// REST API — Регистрация
 app.post('/api/register', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Введи логин и пароль' });
@@ -67,7 +64,6 @@ app.post('/api/register', async (req, res) => {
   }
 });
 
-// REST API — Вход
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Введи логин и пароль' });
@@ -86,10 +82,13 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// Каналы и онлайн юзеры (в памяти)
 const channels = { 'общий': [], 'игры': [], 'фидбек': [] };
 const onlineUsers = new Map(); // ws -> { id, username, color, channel }
 const dmHistory = new Map();
+
+// ── ГОЛОСОВЫЕ КАНАЛЫ ──
+// voiceChannels: { channelName: Set<username> }
+const voiceChannels = { 'голос-1': new Set(), 'голос-2': new Set() };
 
 function dmKey(a, b) { return [a, b].sort().join('|'); }
 
@@ -108,7 +107,7 @@ function sendTo(ws, data) {
 
 function getUserList() {
   return Array.from(onlineUsers.values()).map(u => ({
-    username: u.username, color: u.color, channel: u.channel
+    username: u.username, color: u.color, channel: u.channel, voiceChannel: u.voiceChannel || null
   }));
 }
 
@@ -119,22 +118,36 @@ function findWsByUsername(username) {
   return null;
 }
 
-// WebSocket — проверка токена при подключении
+function getVoiceChannelList() {
+  const result = {};
+  for (const [ch, members] of Object.entries(voiceChannels)) {
+    result[ch] = Array.from(members).map(username => {
+      const u = Array.from(onlineUsers.values()).find(x => x.username === username);
+      return { username, color: u ? u.color : '#4af0c0' };
+    });
+  }
+  return result;
+}
+
+function broadcastVoiceState() {
+  broadcast({ type: 'voice_state', channels: getVoiceChannelList() });
+}
+
 wss.on('connection', (ws, req) => {
   ws.on('message', (raw) => {
     let data;
     try { data = JSON.parse(raw); } catch { return; }
 
-    // Аутентификация
     if (data.type === 'auth') {
       try {
         const user = jwt.verify(data.token, JWT_SECRET);
-        onlineUsers.set(ws, { id: user.id, username: user.username, color: user.color, channel: 'общий' });
+        onlineUsers.set(ws, { id: user.id, username: user.username, color: user.color, channel: 'общий', voiceChannel: null });
         sendTo(ws, {
           type: 'welcome',
           username: user.username,
           color: user.color,
-          history: channels['общий'].slice(-50)
+          history: channels['общий'].slice(-50),
+          voiceChannels: getVoiceChannelList()
         });
         broadcast({ type: 'user_joined', username: user.username, color: user.color, users: getUserList() });
         broadcast({ type: 'system', text: `${user.username} зашёл в сеть`, channel: 'общий' });
@@ -146,7 +159,7 @@ wss.on('connection', (ws, req) => {
     }
 
     const user = onlineUsers.get(ws);
-    if (!user) return; // не авторизован
+    if (!user) return;
 
     switch (data.type) {
       case 'message': {
@@ -228,12 +241,85 @@ wss.on('connection', (ws, req) => {
         }
         break;
       }
+
+      // ── ГОЛОСОВЫЕ КАНАЛЫ — WebRTC сигналинг ──
+
+      case 'voice_join': {
+        // Выйти из текущего голосового канала если есть
+        if (user.voiceChannel && voiceChannels[user.voiceChannel]) {
+          voiceChannels[user.voiceChannel].delete(user.username);
+        }
+        const vch = data.channel;
+        if (!voiceChannels[vch]) break;
+        user.voiceChannel = vch;
+        voiceChannels[vch].add(user.username);
+
+        // Сообщить всем участникам голосового канала что новый юзер зашёл
+        // Они должны создать peer connection и отправить offer
+        const existingMembers = Array.from(voiceChannels[vch]).filter(u => u !== user.username);
+        existingMembers.forEach(memberName => {
+          const memberWs = findWsByUsername(memberName);
+          if (memberWs) {
+            sendTo(memberWs, { type: 'voice_peer_joined', username: user.username, color: user.color, channel: vch });
+          }
+        });
+
+        sendTo(ws, {
+          type: 'voice_joined',
+          channel: vch,
+          members: Array.from(voiceChannels[vch])
+            .filter(u => u !== user.username)
+            .map(u => {
+              const ud = Array.from(onlineUsers.values()).find(x => x.username === u);
+              return { username: u, color: ud ? ud.color : '#4af0c0' };
+            })
+        });
+
+        broadcastVoiceState();
+        broadcast({ type: 'users', users: getUserList() });
+        break;
+      }
+
+      case 'voice_leave': {
+        if (user.voiceChannel && voiceChannels[user.voiceChannel]) {
+          voiceChannels[user.voiceChannel].delete(user.username);
+          // Сообщить оставшимся
+          voiceChannels[user.voiceChannel].forEach(memberName => {
+            const memberWs = findWsByUsername(memberName);
+            if (memberWs) sendTo(memberWs, { type: 'voice_peer_left', username: user.username });
+          });
+        }
+        user.voiceChannel = null;
+        broadcastVoiceState();
+        broadcast({ type: 'users', users: getUserList() });
+        break;
+      }
+
+      // WebRTC сигналинг — пересылка между пирами
+      case 'voice_offer':
+      case 'voice_answer':
+      case 'voice_ice': {
+        const targetWs = findWsByUsername(data.to);
+        if (targetWs) {
+          sendTo(targetWs, { ...data, from: user.username });
+        }
+        break;
+      }
     }
   });
 
   ws.on('close', () => {
     const user = onlineUsers.get(ws);
     if (user) {
+      // Покинуть голосовой канал
+      if (user.voiceChannel && voiceChannels[user.voiceChannel]) {
+        voiceChannels[user.voiceChannel].delete(user.username);
+        voiceChannels[user.voiceChannel].forEach(memberName => {
+          const memberWs = findWsByUsername(memberName);
+          if (memberWs) sendTo(memberWs, { type: 'voice_peer_left', username: user.username });
+        });
+        broadcastVoiceState();
+      }
       broadcast({ type: 'system', text: `${user.username} вышел`, channel: 'общий' });
       broadcast({ type: 'user_left', username: user.username, users: getUserList() });
       onlineUsers.delete(ws);
