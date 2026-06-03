@@ -236,11 +236,16 @@ select.field option{background:#1a1a1a}
         <circle cx="11" cy="11" r="2" fill="#4af0c0"/>
       </svg>
     </div>
-    <div class="login-title">Добро пожаловать в Grid</div>
-    <div class="login-sub">Введи своё имя чтобы войти</div>
-    <input class="login-input" id="name-input" placeholder="Твоё имя (например Витёк)" maxlength="24" onkeydown="if(event.key==='Enter')doLogin()"/>
-    <button class="login-btn" onclick="doLogin()">Войти</button>
-    <div class="login-hint">Тебе присвоят уникальный тег вида Имя#0000.<br>Имя можно менять в настройках.</div>
+    <div class="login-title">Grid</div>
+    <div class="login-sub">Войди или создай аккаунт</div>
+    <div id="auth-error" style="color:#f05a5a;font-size:12px;margin-bottom:10px;min-height:16px"></div>
+    <input class="login-input" id="username-input" placeholder="Логин" maxlength="24" onkeydown="if(event.key==='Enter')doAuth()"/>
+    <input class="login-input" id="password-input" type="password" placeholder="Пароль" maxlength="64" onkeydown="if(event.key==='Enter')doAuth()"/>
+    <button class="login-btn" id="auth-btn" onclick="doAuth()">Войти</button>
+    <div style="margin-top:12px;font-size:12px;color:#444">
+      <span id="auth-toggle-text">Нет аккаунта?</span>
+      <span onclick="toggleAuthMode()" style="color:#4af0c0;cursor:pointer;margin-left:4px" id="auth-toggle-link">Зарегистрироваться</span>
+    </div>
   </div>
 </div>
 
@@ -463,14 +468,45 @@ let dmUnread = {};      // tag -> count
 const chDesc = { 'общий':'— основной чат', 'игры':'— игровые обсуждения', 'фидбек':'— идеи и фидбек' };
 
 // ── LOGIN ──
-function doLogin() {
-  const name = document.getElementById('name-input').value.trim();
-  if (!name) { shake('name-input'); return; }
-  document.getElementById('login-screen').classList.add('hidden');
-  document.getElementById('app').classList.add('visible');
-  me.name = name;
-  connect(name);
+let authMode = 'login'; // 'login' | 'register'
+
+function toggleAuthMode() {
+  authMode = authMode === 'login' ? 'register' : 'login';
+  document.getElementById('auth-btn').textContent = authMode === 'login' ? 'Войти' : 'Зарегистрироваться';
+  document.getElementById('auth-toggle-text').textContent = authMode === 'login' ? 'Нет аккаунта?' : 'Уже есть аккаунт?';
+  document.getElementById('auth-toggle-link').textContent = authMode === 'login' ? 'Зарегистрироваться' : 'Войти';
+  document.getElementById('auth-error').textContent = '';
 }
+
+async function doAuth() {
+  const username = document.getElementById('username-input').value.trim();
+  const password = document.getElementById('password-input').value;
+  const errEl = document.getElementById('auth-error');
+  if (!username || !password) { errEl.textContent = 'Заполни все поля'; return; }
+
+  const url = authMode === 'login' ? '/api/login' : '/api/register';
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    const data = await res.json();
+    if (!res.ok) { errEl.textContent = data.error || 'Ошибка'; return; }
+    localStorage.setItem('grid_token', data.token);
+    localStorage.setItem('grid_username', data.username);
+    localStorage.setItem('grid_color', data.color);
+    me.name = data.username;
+    me.color = data.color;
+    document.getElementById('login-screen').classList.add('hidden');
+    document.getElementById('app').classList.add('visible');
+    connect(data.token);
+  } catch(e) {
+    errEl.textContent = 'Ошибка соединения';
+  }
+}
+
+function doLogin() { doAuth(); }
 
 function shake(id) {
   const el = document.getElementById(id);
@@ -480,27 +516,42 @@ function shake(id) {
 }
 
 // ── WEBSOCKET ──
-function connect(name) {
+function connect(token) {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}`);
 
   ws.onopen = () => {
     setConnBadge('online');
-    ws.send(JSON.stringify({ type:'join', name }));
+    ws.send(JSON.stringify({ type:'auth', token }));
     document.getElementById('server-ip-display').textContent = location.host;
   };
   ws.onclose = () => {
     setConnBadge('offline');
-    setTimeout(() => connect(me.name), 3000);
+    const t = localStorage.getItem('grid_token');
+    if (t) setTimeout(() => connect(t), 3000);
   };
   ws.onerror = () => setConnBadge('offline');
   ws.onmessage = (e) => handleMsg(JSON.parse(e.data));
 }
 
+// Автовход если есть токен
+window.addEventListener('load', () => {
+  const token = localStorage.getItem('grid_token');
+  const username = localStorage.getItem('grid_username');
+  const color = localStorage.getItem('grid_color');
+  if (token && username) {
+    me.name = username;
+    me.color = color || '#4af0c0';
+    document.getElementById('login-screen').classList.add('hidden');
+    document.getElementById('app').classList.add('visible');
+    connect(token);
+  }
+});
+
 function handleMsg(data) {
   switch(data.type) {
     case 'welcome':
-      me.tag = data.tag; me.color = data.color;
+      me.color = data.color;
       updateMyProfile();
       document.getElementById('messages').innerHTML = '';
       addDaySep();
