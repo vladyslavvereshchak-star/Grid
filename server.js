@@ -82,6 +82,23 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
+// REST API — Смена пароля
+app.post('/api/change-password', async (req, res) => {
+  const auth = req.headers.authorization;
+  if (!auth) return res.status(401).json({ error: 'Нет токена' });
+  try {
+    const jwt2 = require('jsonwebtoken');
+    const user = jwt2.verify(auth.replace('Bearer ', ''), JWT_SECRET);
+    const { password } = req.body;
+    if (!password || password.length < 6) return res.status(400).json({ error: 'Пароль минимум 6 символов' });
+    const hash = await bcrypt.hash(password, 10);
+    await pool.query('UPDATE users SET password_hash=$1 WHERE id=$2', [hash, user.id]);
+    res.json({ ok: true });
+  } catch(e) {
+    res.status(401).json({ error: 'Ошибка авторизации' });
+  }
+});
+
 const channels = { 'общий': [], 'игры': [], 'фидбек': [] };
 const onlineUsers = new Map(); // ws -> { id, username, color, channel }
 const dmHistory = new Map();
