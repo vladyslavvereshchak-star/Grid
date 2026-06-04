@@ -313,7 +313,10 @@ wss.on('connection', (ws, req) => {
       case 'call_accept':
       case 'call_decline':
       case 'call_end':
-      case 'call_widget': {
+      case 'call_widget':
+      case 'call_offer':
+      case 'call_answer':
+      case 'call_ice': {
         const targetWs = findWsByUsername(data.to);
         if (targetWs) {
           sendTo(targetWs, { ...data, from: user.username, fromColor: user.color, fromAvatar: user.avatar || null });

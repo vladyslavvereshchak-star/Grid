@@ -1554,6 +1554,9 @@ function handleMsg(data) {
     case 'call_accept':  handleCallAccepted(data); break;
     case 'call_decline': handleCallDeclined(data); break;
     case 'call_end':     handleCallEnded(data);    break;
+    case 'call_offer':   handleCallOffer(data);    break;
+    case 'call_answer':  handleCallAnswer(data);   break;
+    case 'call_ice':     handleCallIce(data);      break;
     case 'call_widget':
       // Show in-chat widget to the callee
       if (dmMode && dmWith && dmWith.username === data.from) {
@@ -1585,6 +1588,8 @@ let callTimer     = null;    // setInterval for HH:MM timer display
 let callSeconds   = 0;
 let callMuted     = false;
 let callSoundMuted= false;
+let callPc        = null;    // RTCPeerConnection для DM звонка
+let callStream    = null;    // локальный MediaStream для DM звонка
 
 // Server-side timeouts (cleared on answer/decline/hangup)
 let callRingTimeout   = null; // 30s ring → widget + solo mode
@@ -1646,12 +1651,13 @@ function handleCallAccepted(data) {
   if (callSoloTimeout) { clearTimeout(callSoloTimeout); callSoloTimeout = null; }
   callSolo = false;
   callActive = true;
-  // Remove widget if posted
   markWidgetEnded();
   document.getElementById('call-state-label').textContent = 'Connected';
   document.getElementById('call-solo-hint').style.display = 'none';
   startCallTimer();
   showNotif(`${data.from} joined the call`, 'blue');
+  // Caller создаёт WebRTC offer
+  startCallWebRTC(data.from, true);
 }
 
 // ── CALLER: peer declined ──
@@ -1716,6 +1722,9 @@ function acceptIncomingCall() {
   const btn = document.getElementById('call-btn');
   btn.classList.add('in-call');
   btn.innerHTML = '<i class="ti ti-phone-off"></i>';
+
+  // Callee готовит WebRTC, ждёт offer от caller
+  startCallWebRTC(callPeer.username, false);
 }
 
 function declineIncomingCall() {
@@ -1743,6 +1752,9 @@ function endCall(silent = false) {
   callActive = false; callSolo = false;
   callMuted  = false; callSoundMuted = false;
   callSeconds = 0; callPeer = null;
+
+  // Закрываем WebRTC
+  closeCallWebRTC();
 
   // Mark widget ended
   markWidgetEnded();
@@ -1897,6 +1909,7 @@ function toggleCallMute() {
   btn.classList.toggle('muted', callMuted);
   ico.className = callMuted ? 'ti ti-microphone-off' : 'ti ti-microphone';
   if (localStream) localStream.getAudioTracks().forEach(t => t.enabled = !callMuted);
+  if (callStream)  callStream.getAudioTracks().forEach(t => t.enabled = !callMuted);
 }
 
 function toggleCallSound() {
@@ -1908,6 +1921,86 @@ function toggleCallSound() {
   for (const audio of Object.values(audioElements)) {
     audio.muted = callSoundMuted;
   }
+  const callAudio = document.getElementById('call-remote-audio');
+  if (callAudio) callAudio.muted = callSoundMuted;
+}
+
+// ══════════════════════════════
+//  WebRTC для DM звонков
+// ══════════════════════════════
+
+async function startCallWebRTC(peerUsername, isInitiator) {
+  closeCallWebRTC(); // чистим старое если есть
+  try {
+    callStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+  } catch(e) {
+    showNotif('Microphone access denied');
+    return;
+  }
+
+  callPc = new RTCPeerConnection(ICE_CONFIG);
+  callStream.getTracks().forEach(t => callPc.addTrack(t, callStream));
+  callStream.getAudioTracks().forEach(t => t.enabled = !callMuted); // применяем текущий mute
+
+  callPc.onicecandidate = (e) => {
+    if (e.candidate) wsSend({ type: 'call_ice', to: peerUsername, candidate: e.candidate });
+  };
+
+  callPc.ontrack = (e) => {
+    let audio = document.getElementById('call-remote-audio');
+    if (!audio) {
+      audio = document.createElement('audio');
+      audio.id = 'call-remote-audio';
+      audio.autoplay = true;
+      document.body.appendChild(audio);
+    }
+    audio.muted = callSoundMuted;
+    audio.srcObject = e.streams[0];
+  };
+
+  callPc.onconnectionstatechange = () => {
+    if (callPc && callPc.connectionState === 'connected') {
+      document.getElementById('call-state-label').textContent = 'Connected · Audio live';
+    }
+    if (callPc && (callPc.connectionState === 'failed' || callPc.connectionState === 'disconnected')) {
+      document.getElementById('call-state-label').textContent = 'Connection lost';
+    }
+  };
+
+  if (isInitiator) {
+    const offer = await callPc.createOffer();
+    await callPc.setLocalDescription(offer);
+    wsSend({ type: 'call_offer', to: peerUsername, sdp: offer });
+  }
+}
+
+async function handleCallOffer(data) {
+  if (!callPc) return;
+  try {
+    await callPc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+    const answer = await callPc.createAnswer();
+    await callPc.setLocalDescription(answer);
+    wsSend({ type: 'call_answer', to: data.from, sdp: answer });
+  } catch(e) { console.error('call_offer error', e); }
+}
+
+async function handleCallAnswer(data) {
+  if (!callPc) return;
+  try {
+    await callPc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+  } catch(e) { console.error('call_answer error', e); }
+}
+
+async function handleCallIce(data) {
+  if (!callPc || !data.candidate) return;
+  try { await callPc.addIceCandidate(new RTCIceCandidate(data.candidate)); } catch(e) {}
+}
+
+function closeCallWebRTC() {
+  if (callPc) { callPc.close(); callPc = null; }
+  if (callStream) { callStream.getTracks().forEach(t => t.stop()); callStream = null; }
+  const audio = document.getElementById('call-remote-audio');
+  if (audio) { audio.srcObject = null; audio.remove(); }
 }
 
 // ══════════════════════════════
