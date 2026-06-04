@@ -356,6 +356,7 @@ body{
   transition:opacity 0.3s ease
 }
 .chat-messages.call-dimmed{opacity:0.3;pointer-events:none}
+.chat-messages.call-dimmed-soft{opacity:0.7;pointer-events:none}
 
 .msg-day-sep{
   font-size:9px;color:var(--text3);text-align:center;
@@ -582,6 +583,23 @@ body{
 .call-disconnect:hover{background:rgba(255,68,102,0.22);box-shadow:0 0 18px rgba(255,68,102,0.2)}
 
 .call-sep{width:1px;height:28px;background:var(--border2)}
+
+/* Accept / Decline buttons on incoming call */
+.call-accept-btn,.call-decline-btn{
+  display:flex;align-items:center;gap:7px;
+  padding:10px 22px;border-radius:8px;cursor:pointer;
+  font-size:11px;font-weight:700;font-family:'JetBrains Mono',monospace;
+  letter-spacing:0.08em;text-transform:uppercase;
+  transition:all 0.2s;border:1px solid;
+}
+.call-accept-btn{
+  background:rgba(0,229,255,0.08);border-color:rgba(0,229,255,0.3);color:var(--accent);
+}
+.call-accept-btn:hover{background:rgba(0,229,255,0.18);box-shadow:0 0 18px rgba(0,229,255,0.2);transform:translateY(-1px)}
+.call-decline-btn{
+  background:rgba(255,68,102,0.08);border-color:rgba(255,68,102,0.3);color:var(--red);
+}
+.call-decline-btn:hover{background:rgba(255,68,102,0.18);box-shadow:0 0 18px rgba(255,68,102,0.2);transform:translateY(-1px)}
 
 /* ══════════════════════════════════
    MODAL
@@ -1738,6 +1756,7 @@ function endCall(silent = false) {
   document.getElementById('call-sound-btn').classList.remove('muted');
   document.getElementById('call-sound-icon').className = 'ti ti-volume';
   document.getElementById('messages').classList.remove('call-dimmed');
+  document.getElementById('messages').classList.remove('call-dimmed-soft');
 
   // Reset call button
   const btn = document.getElementById('call-btn');
@@ -1761,17 +1780,29 @@ function setCallCard(overlayId, name, color, label, state) {
 
 function showCallOverlay(id, show) {
   const el = document.getElementById(id);
+  const msgs = document.getElementById('messages');
   if (show) {
     el.style.display = 'flex';
     void el.offsetWidth;
     el.classList.add('active');
-    document.getElementById('messages').classList.add('call-dimmed');
-    if (id === 'call-overlay') document.getElementById('call-controls').classList.add('active');
+    if (id === 'call-overlay') {
+      msgs.classList.remove('call-dimmed-soft');
+      msgs.classList.add('call-dimmed');
+      document.getElementById('call-controls').classList.add('active');
+    } else if (id === 'incoming-call-overlay') {
+      if (!msgs.classList.contains('call-dimmed')) {
+        msgs.classList.add('call-dimmed-soft');
+      }
+    }
   } else {
     el.classList.remove('active');
     if (id === 'call-overlay') {
-      document.getElementById('messages').classList.remove('call-dimmed');
+      msgs.classList.remove('call-dimmed');
+      msgs.classList.remove('call-dimmed-soft');
       document.getElementById('call-controls').classList.remove('active');
+    } else if (id === 'incoming-call-overlay') {
+      // Only remove soft dim; don't touch call-dimmed (active call may be running)
+      msgs.classList.remove('call-dimmed-soft');
     }
     setTimeout(() => { el.style.display = 'none'; }, 400);
   }
