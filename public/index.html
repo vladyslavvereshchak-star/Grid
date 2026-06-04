@@ -1837,7 +1837,7 @@ function enterSoloMode() {
 }
 
 // ── CALLER: peer accepted ──
-function handleCallAccepted(data) {
+async function handleCallAccepted(data) {
   // Cancel ring timeout if still running
   if (callRingTimeout) { clearTimeout(callRingTimeout); callRingTimeout = null; }
   if (callSoloTimeout) { clearTimeout(callSoloTimeout); callSoloTimeout = null; }
@@ -1848,8 +1848,8 @@ function handleCallAccepted(data) {
   document.getElementById('call-solo-hint').style.display = 'none';
   startCallTimer();
   showNotif(`${data.from} joined the call`, 'blue');
-  // Caller создаёт WebRTC offer
-  startCallWebRTC(data.from, true);
+  // Caller создаёт WebRTC — ждём полного поднятия перед отправкой offer
+  await startCallWebRTC(data.from, true);
 }
 
 // ── CALLER: peer declined ──
@@ -2132,7 +2132,7 @@ async function startCallWebRTC(peerUsername, isInitiator) {
 
   callPc = new RTCPeerConnection(ICE_CONFIG);
   callStream.getTracks().forEach(t => callPc.addTrack(t, callStream));
-  callStream.getAudioTracks().forEach(t => t.enabled = !callMuted); // применяем текущий mute
+  callStream.getAudioTracks().forEach(t => t.enabled = !callMuted);
 
   callPc.onicecandidate = (e) => {
     if (e.candidate) wsSend({ type: 'call_ice', to: peerUsername, candidate: e.candidate });
@@ -2149,7 +2149,16 @@ async function startCallWebRTC(peerUsername, isInitiator) {
       document.body.appendChild(audio);
     }
     audio.muted = callSoundMuted;
-    audio.srcObject = e.streams[0];
+    // Берём первый стрим если есть, иначе собираем из треков
+    if (e.streams && e.streams[0]) {
+      audio.srcObject = e.streams[0];
+    } else {
+      const ms = audio.srcObject || new MediaStream();
+      ms.addTrack(e.track);
+      audio.srcObject = ms;
+    }
+    // Принудительно запускаем воспроизведение (нужно на некоторых браузерах ПК)
+    audio.play().catch(() => {});
     applySinkId(audio);
   };
 
@@ -2163,7 +2172,7 @@ async function startCallWebRTC(peerUsername, isInitiator) {
   };
 
   if (isInitiator) {
-    const offer = await callPc.createOffer();
+    const offer = await callPc.createOffer({ offerToReceiveAudio: true });
     await callPc.setLocalDescription(offer);
     wsSend({ type: 'call_offer', to: peerUsername, sdp: offer });
   }
@@ -2178,7 +2187,7 @@ async function handleCallOffer(data) {
       try { await callPc.addIceCandidate(new RTCIceCandidate(c)); } catch(e) {}
     }
     callIceBuffer = [];
-    const answer = await callPc.createAnswer();
+    const answer = await callPc.createAnswer({ offerToReceiveAudio: true });
     await callPc.setLocalDescription(answer);
     wsSend({ type: 'call_answer', to: data.from, sdp: answer });
   } catch(e) { console.error('call_offer error', e); }
@@ -2253,7 +2262,7 @@ async function handlePeerJoined(data) {
 async function handleVoiceOffer(data) {
   const pc = createPeerConnection(data.from);
   await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-  const answer = await pc.createAnswer();
+  const answer = await pc.createAnswer({ offerToReceiveAudio: true });
   await pc.setLocalDescription(answer);
   ws.send(JSON.stringify({ type:'voice_answer', to: data.from, sdp: answer }));
 }
@@ -2284,12 +2293,18 @@ function createPeerConnection(username) {
       audio = document.createElement('audio');
       audio.autoplay = true;
       audio.setAttribute('playsinline', '');
-      // Must be in the DOM for browser AEC to link output back to input cancellation
       audio.style.display = 'none';
       document.body.appendChild(audio);
       audioElements[username] = audio;
     }
-    audio.srcObject = e.streams[0];
+    if (e.streams && e.streams[0]) {
+      audio.srcObject = e.streams[0];
+    } else {
+      const ms = audio.srcObject || new MediaStream();
+      ms.addTrack(e.track);
+      audio.srcObject = ms;
+    }
+    audio.play().catch(() => {});
     applySinkId(audio);
   };
   pc.onconnectionstatechange = () => {
@@ -2332,7 +2347,6 @@ function toggleMic() {
   btn.classList.toggle('active', !micMuted);
   ico.className = micMuted ? 'ti ti-microphone-off' : 'ti ti-microphone';
   if (localStream) localStream.getAudioTracks().forEach(t => t.enabled = !micMuted);
-  if (typeof callStream !== 'undefined' && callStream) callStream.getAudioTracks().forEach(t => t.enabled = !micMuted);
   showNotif(micMuted ? 'Microphone muted' : 'Microphone active');
 }
 
