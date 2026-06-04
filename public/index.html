@@ -1366,9 +1366,24 @@ let peerConnections = {};
 let audioElements = {};
 
 const ICE_CONFIG = {
-  iceServers:[
-    { urls:'stun:stun.l.google.com:19302' },
-    { urls:'stun:stun1.l.google.com:19302' }
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turns:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    }
   ]
 };
 
@@ -2317,6 +2332,7 @@ function toggleMic() {
   btn.classList.toggle('active', !micMuted);
   ico.className = micMuted ? 'ti ti-microphone-off' : 'ti ti-microphone';
   if (localStream) localStream.getAudioTracks().forEach(t => t.enabled = !micMuted);
+  if (typeof callStream !== 'undefined' && callStream) callStream.getAudioTracks().forEach(t => t.enabled = !micMuted);
   showNotif(micMuted ? 'Microphone muted' : 'Microphone active');
 }
 
