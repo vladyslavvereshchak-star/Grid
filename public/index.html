@@ -1408,7 +1408,10 @@ function getAudioConstraints() {
     sampleRate:   { ideal: 48000 },
     latency:      { ideal: 0.01 },
   };
-  if (voiceInputDeviceId) c.deviceId = { exact: voiceInputDeviceId };
+  // Use 'ideal' not 'exact' — 'exact' throws OverconstrainedError if the saved
+  // deviceId changed (USB reconnect, driver update, reboot) and silently kills mic.
+  // 'ideal' tries the saved device and falls back to default if not found.
+  if (voiceInputDeviceId) c.deviceId = { ideal: voiceInputDeviceId };
   return { audio: c, video: false };
 }
 
@@ -1511,7 +1514,20 @@ function startMicTest() {
       micLevelAnimFrame = requestAnimationFrame(tick);
     }
     tick();
-  }).catch(() => {});
+  }).catch(err => {
+    const txt = document.getElementById('mic-level-text');
+    const bar = document.getElementById('mic-level-bar');
+    if (txt) txt.textContent = err.name === 'NotFoundError' ? 'Device not found'
+                             : err.name === 'NotAllowedError' ? 'Permission denied'
+                             : err.name === 'OverconstrainedError' ? 'Bad device ID — resetting'
+                             : err.name;
+    if (bar) { bar.style.width = '100%'; bar.style.background = 'var(--red)'; }
+    if (err.name === 'OverconstrainedError' && voiceInputDeviceId) {
+      voiceInputDeviceId = '';
+      localStorage.removeItem('grid_input_device');
+      setTimeout(startMicTest, 300);
+    }
+  });
 }
 
 function stopMicTest() {
@@ -2317,7 +2333,19 @@ async function joinVoiceChannel(ch) {
   if (currentVoiceChannel) await leaveVoiceChannel();
   try {
     localStream = await navigator.mediaDevices.getUserMedia(getAudioConstraints());
-  } catch(e) { showNotif('Microphone access denied', 'voice'); return; }
+  } catch(e) {
+    // If saved deviceId is stale, clear it and retry with default
+    if (e.name === 'OverconstrainedError' && voiceInputDeviceId) {
+      voiceInputDeviceId = '';
+      localStorage.removeItem('grid_input_device');
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      } catch(e2) { showNotif('Microphone access denied', 'voice'); return; }
+    } else {
+      showNotif(e.name === 'NotAllowedError' ? 'Microphone permission denied' : 'Microphone error: ' + e.name, 'voice');
+      return;
+    }
+  }
   currentVoiceChannel = ch;
   document.getElementById('voice-bar').classList.add('active');
   document.getElementById('voice-bar-name').textContent = ch;
