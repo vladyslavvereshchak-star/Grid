@@ -2126,16 +2126,25 @@ function toggleCallSound() {
 
 // Патчим SDP чтобы отключить DTX и FEC — они дают нарастающий эффект на динамических микрофонах
 function patchOpusSDP(sdp) {
+  // Находим payload type для opus
+  const opusMatch = sdp.match(/a=rtpmap:(\d+) opus/i);
+  if (!opusMatch) return sdp;
+  const pt = opusMatch[1];
+
   return sdp.split('\r\n').map(line => {
-    if (line.startsWith('a=fmtp:') && sdp.includes('opus')) {
-      // Убираем DTX (прерывистую передачу) и включаем CBR (постоянный битрейт)
-      if (!line.includes('usedtx')) line += ';usedtx=0';
-      else line = line.replace(/usedtx=\d/, 'usedtx=0');
-      if (!line.includes('cbr')) line += ';cbr=1';
-      else line = line.replace(/cbr=\d/, 'cbr=1');
-      // Убираем in-band FEC — он тоже может влиять
-      if (!line.includes('useinbandfec')) line += ';useinbandfec=0';
-      else line = line.replace(/useinbandfec=\d/, 'useinbandfec=0');
+    // Патчим только fmtp строку для opus
+    if (line.startsWith(`a=fmtp:${pt} `)) {
+      // Убираем DTX — главная причина "волн" (браузер режет поток в паузах)
+      line = line.replace(/usedtx=\d/, '').replace(/;+$/, '');
+      line += ';usedtx=0';
+      // CBR — постоянный битрейт, нет скачков
+      line = line.replace(/cbr=\d/, '').replace(/;+$/, '');
+      line += ';cbr=1';
+      // Убираем FEC
+      line = line.replace(/useinbandfec=\d/, '').replace(/;+$/, '');
+      line += ';useinbandfec=0';
+      // Максимальный ptime — меньше пакетов, меньше джиттера
+      line += ';maxplaybackrate=48000;sprop-maxcapturerate=48000';
     }
     return line;
   }).join('\r\n');
@@ -2179,17 +2188,17 @@ async function startCallWebRTC(peerUsername, isInitiator) {
     callAudioCtx = new AudioContext({ sampleRate: 48000, latencyHint: 'interactive' });
     const source = callAudioCtx.createMediaStreamSource(rawStream);
 
-    // Компрессор — мягко выравнивает уровень, убирает пики
+    // Компрессор — мягко ограничивает пики, НЕ качает уровень
     const compressor = callAudioCtx.createDynamicsCompressor();
-    compressor.threshold.value = -24;  // начинаем компрессию с -24 dB
-    compressor.knee.value      = 8;    // плавный колен
-    compressor.ratio.value     = 4;    // соотношение 4:1 — мягкое
-    compressor.attack.value    = 0.003; // быстрая атака (3 мс)
-    compressor.release.value   = 0.15; // умеренный release (150 мс)
+    compressor.threshold.value = -18;  // только реальные пики
+    compressor.knee.value      = 12;   // очень плавный колен
+    compressor.ratio.value     = 3;    // лёгкое соотношение 3:1
+    compressor.attack.value    = 0.01; // 10мс — не слишком быстро
+    compressor.release.value   = 0.4;  // 400мс — медленный release, не качает
 
-    // Gain после компрессора — небольшой подъём чтобы компенсировать компрессию
+    // Без дополнительного gain — не задираем громкость
     const outputGain = callAudioCtx.createGain();
-    outputGain.gain.value = 1.2;
+    outputGain.gain.value = 1.0;
 
     const dest = callAudioCtx.createMediaStreamDestination();
     source.connect(compressor);
