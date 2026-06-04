@@ -1781,6 +1781,7 @@ let callMuted     = false;
 let callSoundMuted= false;
 let callPc        = null;    // RTCPeerConnection для DM звонка
 let callStream    = null;    // локальный MediaStream для DM звонка
+let callAudioCtx  = null;    // AudioContext для Web Audio обработки
 let callIceBuffer = [];      // ICE кандидаты пришедшие до setRemoteDescription
 
 // Server-side timeouts (cleared on answer/decline/hangup)
@@ -2101,7 +2102,9 @@ function toggleCallMute() {
   btn.classList.toggle('muted', callMuted);
   ico.className = callMuted ? 'ti ti-microphone-off' : 'ti ti-microphone';
   if (localStream) localStream.getAudioTracks().forEach(t => t.enabled = !callMuted);
-  if (callStream)  callStream.getAudioTracks().forEach(t => t.enabled = !callMuted);
+  // Для DM звонка мутируем rawStream (физический источник)
+  const raw = callStream?._rawStream || callStream;
+  if (raw) raw.getAudioTracks().forEach(t => t.enabled = !callMuted);
 }
 
 function toggleCallSound() {
@@ -2121,18 +2124,76 @@ function toggleCallSound() {
 //  WebRTC для DM звонков
 // ══════════════════════════════
 
+let callAudioCtx = null; // AudioContext для обработки микрофона
+
 async function startCallWebRTC(peerUsername, isInitiator) {
   closeCallWebRTC(); // чистим старое если есть
+
+  // Получаем сырой поток с ОТКЛЮЧЕННЫМ AGC — он и есть причина волн
+  let rawStream;
   try {
-    callStream = await navigator.mediaDevices.getUserMedia(getAudioConstraints());
+    rawStream = await navigator.mediaDevices.getUserMedia({
+      video: false,
+      audio: {
+        echoCancellation:  { ideal: audioSettings.echo },
+        noiseSuppression:  { ideal: audioSettings.noise },
+        autoGainControl:   false,   // ← ВЫКЛЮЧАЕМ — это главная причина "волн"
+        googAutoGainControl: false, // Chrome-специфичный флаг
+        googAutoGainControl2: false,
+        channelCount: { ideal: 1 },
+        sampleRate:   { ideal: 48000 },
+        latency:      { ideal: 0.01 },
+        ...(voiceInputDeviceId ? { deviceId: { exact: voiceInputDeviceId } } : {})
+      }
+    });
   } catch(e) {
-    showNotif('Microphone access denied');
-    return;
+    try {
+      // Fallback без exact deviceId
+      rawStream = await navigator.mediaDevices.getUserMedia({
+        video: false,
+        audio: { echoCancellation: audioSettings.echo, noiseSuppression: audioSettings.noise, autoGainControl: false }
+      });
+    } catch(e2) {
+      showNotif('Microphone access denied');
+      return;
+    }
+  }
+
+  // Прогоняем через Web Audio: DynamicsCompressor (лимитер) предотвращает клиппинг и резкие скачки
+  try {
+    callAudioCtx = new AudioContext({ sampleRate: 48000, latencyHint: 'interactive' });
+    const source = callAudioCtx.createMediaStreamSource(rawStream);
+
+    // Компрессор — мягко выравнивает уровень, убирает пики
+    const compressor = callAudioCtx.createDynamicsCompressor();
+    compressor.threshold.value = -24;  // начинаем компрессию с -24 dB
+    compressor.knee.value      = 8;    // плавный колен
+    compressor.ratio.value     = 4;    // соотношение 4:1 — мягкое
+    compressor.attack.value    = 0.003; // быстрая атака (3 мс)
+    compressor.release.value   = 0.15; // умеренный release (150 мс)
+
+    // Gain после компрессора — небольшой подъём чтобы компенсировать компрессию
+    const outputGain = callAudioCtx.createGain();
+    outputGain.gain.value = 1.2;
+
+    const dest = callAudioCtx.createMediaStreamDestination();
+    source.connect(compressor);
+    compressor.connect(outputGain);
+    outputGain.connect(dest);
+
+    callStream = dest.stream;
+    // Добавляем видеотреки из rawStream если есть (не нужно, но на всякий случай)
+  } catch(e) {
+    // Если Web Audio API недоступен — используем rawStream как есть
+    callStream = rawStream;
   }
 
   callPc = new RTCPeerConnection(ICE_CONFIG);
   callStream.getTracks().forEach(t => callPc.addTrack(t, callStream));
-  callStream.getAudioTracks().forEach(t => t.enabled = !callMuted);
+  // Управление mute через rawStream (он физически захватывает микрофон)
+  rawStream.getAudioTracks().forEach(t => t.enabled = !callMuted);
+  // Сохраняем rawStream чтобы корректно остановить треки при завершении
+  callStream._rawStream = rawStream;
 
   callPc.onicecandidate = (e) => {
     if (e.candidate) wsSend({ type: 'call_ice', to: peerUsername, candidate: e.candidate });
@@ -2219,7 +2280,13 @@ async function handleCallIce(data) {
 
 function closeCallWebRTC() {
   if (callPc) { callPc.close(); callPc = null; }
-  if (callStream) { callStream.getTracks().forEach(t => t.stop()); callStream = null; }
+  if (callStream) {
+    // Останавливаем rawStream (физический микрофон)
+    const raw = callStream._rawStream || callStream;
+    raw.getTracks().forEach(t => t.stop());
+    callStream = null;
+  }
+  if (callAudioCtx) { callAudioCtx.close().catch(()=>{}); callAudioCtx = null; }
   callIceBuffer = [];
   const audio = document.getElementById('call-remote-audio');
   if (audio) { audio.srcObject = null; audio.remove(); }
