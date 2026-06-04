@@ -232,7 +232,7 @@ body{
 
 /* DM section */
 .sub-dm-label{
-  padding:10px 14px 4px;font-size:9px;letter-spacing:0.12em;
+  padding:12px 14px 5px;font-size:10px;letter-spacing:0.14em;
   color:var(--text3);text-transform:uppercase;
   display:flex;align-items:center;justify-content:space-between;
   flex-shrink:0;
@@ -275,7 +275,7 @@ body{
 
 /* Online users section in sub-panel */
 .sub-online-label{
-  padding:10px 14px 4px;font-size:9px;letter-spacing:0.12em;
+  padding:12px 14px 5px;font-size:10px;letter-spacing:0.14em;
   color:var(--text3);text-transform:uppercase;
   display:flex;align-items:center;justify-content:space-between;flex-shrink:0;
 }
@@ -603,8 +603,8 @@ body{
 .modal-overlay.open .modal{transform:translateY(0)}
 .modal-nav{width:170px;background:rgba(0,0,0,0.2);border-right:1px solid var(--border);padding:16px 0;flex-shrink:0;display:flex;flex-direction:column}
 .modal-nav-title{padding:0 12px 10px;font-size:9px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text3)}
-.modal-tab{padding:8px 12px;font-size:11px;color:var(--text3);cursor:pointer;transition:all 0.15s;display:flex;align-items:center;gap:7px;margin:1px 4px;border-radius:5px;font-weight:500;letter-spacing:0.02em}
-.modal-tab:hover{background:rgba(255,255,255,0.04);color:var(--text2)}
+.modal-tab{padding:9px 13px;font-size:12px;color:var(--text3);cursor:pointer;transition:all 0.18s cubic-bezier(0.34,1.56,0.64,1);display:flex;align-items:center;gap:8px;margin:2px 4px;border-radius:6px;font-weight:500;letter-spacing:0.02em}
+.modal-tab:hover{background:rgba(0,229,255,0.06);color:var(--accent);transform:scale(1.03) translateX(2px)}
 .modal-tab.active{background:var(--accent-dim);color:var(--accent)}
 .modal-close{padding:8px 12px;font-size:11px;color:var(--text3);cursor:pointer;display:flex;align-items:center;gap:7px;border-radius:5px;margin:auto 4px 4px;transition:all 0.15s;letter-spacing:0.02em}
 .modal-close:hover{background:rgba(255,68,102,0.08);color:var(--red)}
@@ -664,24 +664,36 @@ body{
 
 /* ── CHANNEL LIST (server view) ── */
 .ch-item{
-  display:flex;align-items:center;gap:7px;padding:6px 10px;
-  border-radius:5px;margin:1px 5px;cursor:pointer;
-  font-size:11px;color:var(--text3);transition:all 0.15s;
+  display:flex;align-items:center;gap:8px;padding:8px 12px;
+  border-radius:6px;margin:2px 5px;cursor:pointer;
+  font-size:12px;color:var(--text3);transition:all 0.18s cubic-bezier(0.34,1.56,0.64,1);
   text-transform:uppercase;letter-spacing:0.05em;
 }
-.ch-item:hover{background:rgba(255,255,255,0.03);color:var(--text2)}
+.ch-item:hover{
+  background:rgba(0,229,255,0.07);color:var(--accent);
+  box-shadow:0 0 12px rgba(0,229,255,0.1);
+  transform:scale(1.04) translateX(2px);
+  border-left:2px solid rgba(0,229,255,0.4);
+  padding-left:10px;
+}
 .ch-item.active{background:var(--accent-dim);color:var(--accent)}
-.ch-item i{font-size:12px;flex-shrink:0}
+.ch-item i{font-size:13px;flex-shrink:0}
 
 .vc-item{
-  display:flex;align-items:center;gap:7px;padding:6px 10px;
-  border-radius:5px;margin:1px 5px;cursor:pointer;
-  font-size:11px;color:var(--text3);transition:all 0.15s;
+  display:flex;align-items:center;gap:8px;padding:8px 12px;
+  border-radius:6px;margin:2px 5px;cursor:pointer;
+  font-size:12px;color:var(--text3);transition:all 0.18s cubic-bezier(0.34,1.56,0.64,1);
   letter-spacing:0.05em;
 }
-.vc-item:hover{background:var(--voice-dim);color:var(--voice)}
+.vc-item:hover{
+  background:var(--voice-dim);color:var(--voice);
+  transform:scale(1.04) translateX(2px);
+  box-shadow:0 0 12px rgba(192,132,252,0.15);
+  border-left:2px solid rgba(192,132,252,0.4);
+  padding-left:10px;
+}
 .vc-item.active{background:var(--voice-dim);color:var(--voice);border:1px solid var(--voice-border)}
-.vc-item i{font-size:12px;flex-shrink:0}
+.vc-item i{font-size:13px;flex-shrink:0}
 
 /* ── PENDING REQUESTS (isolated) ── */
 .pending-req-item{
