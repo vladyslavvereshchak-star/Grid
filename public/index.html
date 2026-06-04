@@ -1590,6 +1590,7 @@ let callMuted     = false;
 let callSoundMuted= false;
 let callPc        = null;    // RTCPeerConnection для DM звонка
 let callStream    = null;    // локальный MediaStream для DM звонка
+let callIceBuffer = [];      // ICE кандидаты пришедшие до setRemoteDescription
 
 // Server-side timeouts (cleared on answer/decline/hangup)
 let callRingTimeout   = null; // 30s ring → widget + solo mode
@@ -1707,9 +1708,6 @@ function acceptIncomingCall() {
   if (callIncomingTimer) { clearTimeout(callIncomingTimer); callIncomingTimer = null; }
   showCallOverlay('incoming-call-overlay', false);
 
-  // Signal caller
-  wsSend({ type: 'call_accept', to: callPeer.username });
-
   // Enter connected state on callee side
   callActive = true; callSolo = false;
   setCallCard('call-overlay', callPeer.username, callPeer.color, 'CONNECTED', 'Connected');
@@ -1723,8 +1721,11 @@ function acceptIncomingCall() {
   btn.classList.add('in-call');
   btn.innerHTML = '<i class="ti ti-phone-off"></i>';
 
-  // Callee готовит WebRTC, ждёт offer от caller
-  startCallWebRTC(callPeer.username, false);
+  // Сначала поднимаем WebRTC, только потом говорим caller-у что готовы
+  // Это предотвращает race condition когда offer приходит до создания callPc
+  startCallWebRTC(callPeer.username, false).then(() => {
+    wsSend({ type: 'call_accept', to: callPeer ? callPeer.username : '' });
+  });
 }
 
 function declineIncomingCall() {
@@ -1978,6 +1979,11 @@ async function handleCallOffer(data) {
   if (!callPc) return;
   try {
     await callPc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+    // Применяем буферизованные ICE кандидаты
+    for (const c of callIceBuffer) {
+      try { await callPc.addIceCandidate(new RTCIceCandidate(c)); } catch(e) {}
+    }
+    callIceBuffer = [];
     const answer = await callPc.createAnswer();
     await callPc.setLocalDescription(answer);
     wsSend({ type: 'call_answer', to: data.from, sdp: answer });
@@ -1988,17 +1994,30 @@ async function handleCallAnswer(data) {
   if (!callPc) return;
   try {
     await callPc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+    // Применяем буферизованные ICE кандидаты
+    for (const c of callIceBuffer) {
+      try { await callPc.addIceCandidate(new RTCIceCandidate(c)); } catch(e) {}
+    }
+    callIceBuffer = [];
   } catch(e) { console.error('call_answer error', e); }
 }
 
 async function handleCallIce(data) {
   if (!callPc || !data.candidate) return;
-  try { await callPc.addIceCandidate(new RTCIceCandidate(data.candidate)); } catch(e) {}
+  try {
+    if (callPc.remoteDescription) {
+      await callPc.addIceCandidate(new RTCIceCandidate(data.candidate));
+    } else {
+      // Буферизуем до получения remoteDescription
+      callIceBuffer.push(data.candidate);
+    }
+  } catch(e) {}
 }
 
 function closeCallWebRTC() {
   if (callPc) { callPc.close(); callPc = null; }
   if (callStream) { callStream.getTracks().forEach(t => t.stop()); callStream = null; }
+  callIceBuffer = [];
   const audio = document.getElementById('call-remote-audio');
   if (audio) { audio.srcObject = null; audio.remove(); }
 }
