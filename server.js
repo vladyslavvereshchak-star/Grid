@@ -1,3 +1,12 @@
+// Читаем .env вручную без dotenv
+const fs = require('fs');
+try {
+  const env = fs.readFileSync('.env', 'utf8');
+  env.split('\n').forEach(line => {
+    const [key, ...val] = line.trim().split('=');
+    if (key && val.length) process.env[key] = val.join('=');
+  });
+} catch(e) {}
 const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
@@ -87,7 +96,6 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// REST API — Смена пароля
 app.post('/api/change-password', async (req, res) => {
   const auth = req.headers.authorization;
   if (!auth) return res.status(401).json({ error: 'Нет токена' });
@@ -103,23 +111,20 @@ app.post('/api/change-password', async (req, res) => {
   }
 });
 
-// REST API — Обновление аватара
 app.post('/api/avatar', async (req, res) => {
   const auth = req.headers.authorization;
   if (!auth) return res.status(401).json({ error: 'Нет токена' });
   try {
     const user = jwt.verify(auth.replace('Bearer ', ''), JWT_SECRET);
-    const { avatar } = req.body; // base64 data URL or null to remove
+    const { avatar } = req.body;
 
-    // Validate: must be data URL or null
     if (avatar !== null && avatar !== undefined) {
       if (!avatar.startsWith('data:image/')) return res.status(400).json({ error: 'Invalid image format' });
-      if (avatar.length > 200000) return res.status(400).json({ error: 'Image too large' }); // ~150KB max
+      if (avatar.length > 200000) return res.status(400).json({ error: 'Image too large' });
     }
 
     await pool.query('UPDATE users SET avatar=$1 WHERE id=$2', [avatar || null, user.id]);
 
-    // Broadcast avatar update to all online users
     const avatarUpdate = JSON.stringify({
       type: 'avatar_update',
       username: user.username,
@@ -137,10 +142,9 @@ app.post('/api/avatar', async (req, res) => {
 });
 
 const channels = { 'общий': [], 'игры': [], 'фидбек': [] };
-const onlineUsers = new Map(); // ws -> { id, username, color, avatar, channel, voiceChannel }
+const onlineUsers = new Map();
 const dmHistory = new Map();
 
-// ── ГОЛОСОВЫЕ КАНАЛЫ ──
 const voiceChannels = { 'голос-1': new Set(), 'голос-2': new Set() };
 
 function dmKey(a, b) { return [a, b].sort().join('|'); }
@@ -195,7 +199,6 @@ wss.on('connection', (ws, req) => {
     if (data.type === 'auth') {
       try {
         const user = jwt.verify(data.token, JWT_SECRET);
-        // Load avatar from DB
         pool.query('SELECT avatar FROM users WHERE id=$1', [user.id]).then(result => {
           const avatar = result.rows[0]?.avatar || null;
           onlineUsers.set(ws, {
