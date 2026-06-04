@@ -2185,10 +2185,7 @@ async function startCallWebRTC(peerUsername, isInitiator) {
 
   callPc = new RTCPeerConnection(ICE_CONFIG);
   callStream.getTracks().forEach(t => callPc.addTrack(t, callStream));
-  // Управление mute через rawStream (он физически захватывает микрофон)
-  rawStream.getAudioTracks().forEach(t => t.enabled = !callMuted);
-  // Сохраняем rawStream чтобы корректно остановить треки при завершении
-  callStream._rawStream = rawStream;
+  callStream.getAudioTracks().forEach(t => t.enabled = !callMuted);
 
   callPc.onicecandidate = (e) => {
     if (e.candidate) wsSend({ type: 'call_ice', to: peerUsername, candidate: e.candidate });
