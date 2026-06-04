@@ -2124,6 +2124,23 @@ function toggleCallSound() {
 //  WebRTC для DM звонков
 // ══════════════════════════════
 
+// Патчим SDP чтобы отключить DTX и FEC — они дают нарастающий эффект на динамических микрофонах
+function patchOpusSDP(sdp) {
+  return sdp.split('\r\n').map(line => {
+    if (line.startsWith('a=fmtp:') && sdp.includes('opus')) {
+      // Убираем DTX (прерывистую передачу) и включаем CBR (постоянный битрейт)
+      if (!line.includes('usedtx')) line += ';usedtx=0';
+      else line = line.replace(/usedtx=\d/, 'usedtx=0');
+      if (!line.includes('cbr')) line += ';cbr=1';
+      else line = line.replace(/cbr=\d/, 'cbr=1');
+      // Убираем in-band FEC — он тоже может влиять
+      if (!line.includes('useinbandfec')) line += ';useinbandfec=0';
+      else line = line.replace(/useinbandfec=\d/, 'useinbandfec=0');
+    }
+    return line;
+  }).join('\r\n');
+}
+
 async function startCallWebRTC(peerUsername, isInitiator) {
   closeCallWebRTC(); // чистим старое если есть
 
@@ -2232,6 +2249,8 @@ async function startCallWebRTC(peerUsername, isInitiator) {
 
   if (isInitiator) {
     const offer = await callPc.createOffer({ offerToReceiveAudio: true });
+    // Отключаем DTX (прерывистая передача) — он режет поток в паузах и даёт нарастающий эффект
+    offer.sdp = patchOpusSDP(offer.sdp);
     await callPc.setLocalDescription(offer);
     wsSend({ type: 'call_offer', to: peerUsername, sdp: offer });
   }
@@ -2247,6 +2266,7 @@ async function handleCallOffer(data) {
     }
     callIceBuffer = [];
     const answer = await callPc.createAnswer({ offerToReceiveAudio: true });
+    answer.sdp = patchOpusSDP(answer.sdp);
     await callPc.setLocalDescription(answer);
     wsSend({ type: 'call_answer', to: data.from, sdp: answer });
   } catch(e) { console.error('call_offer error', e); }
