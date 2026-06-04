@@ -1623,6 +1623,13 @@ function connect(token) {
   };
   ws.onclose = () => {
     setConnBadge('offline');
+    // Если был активный звонок — завершаем UI (peer уже не получит call_end через WS)
+    if (callActive || callSolo) {
+      callActive = false; callSolo = false; callPeer = null;
+      closeCallWebRTC();
+      markWidgetEnded();
+      endCallUI();
+    }
     const t2 = localStorage.getItem('grid_token');
     if (t2) setTimeout(() => connect(t2), 3000);
   };
@@ -1822,19 +1829,27 @@ function startCall() {
   }, 30000);
 }
 
-function enterSoloMode() {
+function enterSoloMode(label) {
   callSolo = true;
-  document.getElementById('call-state-label').textContent = 'No answer · Channel open';
+  document.getElementById('call-state-label').textContent = label || 'No answer · Channel open';
   document.getElementById('call-solo-hint').style.display = 'block';
-  // Post the chat widget so the friend can join from the channel
   postCallWidget();
-  // Start solo timer display
   startCallTimer();
-  // 3 minutes alone → auto-hangup
+  // 30 сек один → автозавершение (как в ДС после decline)
   callSoloTimeout = setTimeout(() => {
     callSoloTimeout = null;
-    endCall(true); // silent auto-close
-  }, 3 * 60 * 1000);
+    if (callPeer && ws && ws.readyState === 1) {
+      wsSend({ type: 'call_end', to: callPeer.username });
+    }
+    callActive = false; callSolo = false;
+    callPeer = null;
+    closeCallWebRTC();
+    markWidgetEnded();
+    endCallUI();
+    showNotif('Call ended · No one joined');
+    // Сообщение в чат
+    addSystemMsg('📵 No one joined the call');
+  }, 30 * 1000);
 }
 
 // ── CALLER: peer accepted ──
@@ -1853,17 +1868,29 @@ async function handleCallAccepted(data) {
   await startCallWebRTC(data.from, true);
 }
 
-// ── CALLER: peer declined ──
+// ── CALLER: peer declined — держим канал открытым 30 сек ──
 function handleCallDeclined(data) {
   if (callRingTimeout) { clearTimeout(callRingTimeout); callRingTimeout = null; }
-  endCall();
-  showNotif(`${data.from} declined the call`);
+  // Не закрываем звонок сразу — переходим в solo mode как в ДС
+  // Callee отклонил но может передумать и зайти в течение 30 сек
+  enterSoloMode(`${data.from} declined · Channel open`);
+  showNotif(`${data.from} declined`);
 }
 
 // ── CALLER: peer left mid-call ──
 function handleCallEnded(data) {
-  endCall();
-  if (data && data.from) showNotif(`${data.from} left the call`);
+  const name = data && data.from ? data.from : '';
+  // Чистим всё состояние
+  if (callRingTimeout)   { clearTimeout(callRingTimeout);   callRingTimeout = null; }
+  if (callSoloTimeout)   { clearTimeout(callSoloTimeout);   callSoloTimeout = null; }
+  if (callIncomingTimer) { clearTimeout(callIncomingTimer); callIncomingTimer = null; }
+  callActive = false; callSolo = false;
+  callMuted = false; callSoundMuted = false;
+  callSeconds = 0; callPeer = null;
+  closeCallWebRTC();
+  markWidgetEnded();  // показываем ENDED в чате у обоих
+  endCallUI();
+  if (name) showNotif(`${name} ended the call`);
 }
 
 // ── CALLEE: receive incoming ──
@@ -1914,7 +1941,6 @@ function acceptIncomingCall() {
   btn.innerHTML = '<i class="ti ti-phone-off"></i>';
 
   // Сначала поднимаем WebRTC, только потом говорим caller-у что готовы
-  // Это предотвращает race condition когда offer приходит до создания callPc
   startCallWebRTC(callPeer.username, false).then(() => {
     wsSend({ type: 'call_accept', to: callPeer ? callPeer.username : '' });
   });
@@ -1925,38 +1951,41 @@ function declineIncomingCall() {
   showCallOverlay('incoming-call-overlay', false);
   if (callPeer) {
     wsSend({ type: 'call_decline', to: callPeer.username });
-    callPeer = null;
+    // callPeer оставляем — caller держит канал открытым, callee может ещё присоединиться
   }
 }
 
-// ── HANG UP (both sides) ──
+// ── HANG UP (оба) ──
 function endCall(silent = false) {
-  // Clear all timers
   if (callRingTimeout)   { clearTimeout(callRingTimeout);   callRingTimeout = null; }
   if (callSoloTimeout)   { clearTimeout(callSoloTimeout);   callSoloTimeout = null; }
   if (callIncomingTimer) { clearTimeout(callIncomingTimer); callIncomingTimer = null; }
   if (callTimer)         { clearInterval(callTimer);        callTimer = null; }
 
-  // Signal the peer (if they exist and connection is live)
+  // Сигналим другой стороне
   if (callPeer && ws && ws.readyState === 1) {
     wsSend({ type: 'call_end', to: callPeer.username });
   }
 
+  const wasActive = callActive;
   callActive = false; callSolo = false;
   callMuted  = false; callSoundMuted = false;
   callSeconds = 0; callPeer = null;
 
-  // Закрываем WebRTC
   closeCallWebRTC();
-
-  // Mark widget ended
   markWidgetEnded();
+  endCallUI();
 
-  // Hide overlays
+  if (!silent && wasActive) showNotif('Call ended');
+}
+
+// ── Только UI сброс, без сигналинга (вызывается из handleCallEnded тоже) ──
+function endCallUI() {
+  if (callTimer) { clearInterval(callTimer); callTimer = null; }
+
   showCallOverlay('call-overlay', false);
   showCallOverlay('incoming-call-overlay', false);
 
-  // Reset controls
   document.getElementById('call-controls').classList.remove('active');
   document.getElementById('call-timer').textContent = '00:00';
   document.getElementById('call-mute-btn').classList.remove('muted');
@@ -1968,8 +1997,6 @@ function endCall(silent = false) {
   const btn = document.getElementById('call-btn');
   btn.classList.remove('in-call');
   btn.innerHTML = '<i class="ti ti-phone"></i>';
-
-  if (!silent && callActive) showNotif('Call ended');
 }
 
 // ── HELPERS ──
