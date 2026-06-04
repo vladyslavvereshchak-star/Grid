@@ -1179,6 +1179,7 @@ body{
     <div class="modal-nav">
       <div class="modal-nav-title">SETTINGS</div>
       <div class="modal-tab active" onclick="switchTab('account',this)"><i class="ti ti-user"></i> Account</div>
+      <div class="modal-tab" onclick="switchTab('voice',this)"><i class="ti ti-microphone"></i> Voice</div>
       <div class="modal-tab" onclick="switchTab('hotkeys',this)"><i class="ti ti-keyboard"></i> Hotkeys</div>
       <div class="modal-tab" onclick="switchTab('network',this)"><i class="ti ti-network"></i> Network</div>
       <div class="modal-close" onclick="closeModal()"><i class="ti ti-x"></i> Close</div>
@@ -1233,6 +1234,45 @@ body{
           <div class="hk-badge" id="hk-mute" onclick="recordHotkey('mute',this)">M</div>
         </div>
         <div style="margin-top:12px;font-size:10px;color:var(--text3);letter-spacing:0.04em">Click a key badge to reassign</div>
+      </div>
+      <div class="pane" id="pane-voice">
+        <div class="modal-section-title">Voice & Audio</div>
+        <div style="margin-bottom:20px">
+          <div class="field-label">Input Device (Microphone)</div>
+          <select class="field" id="voice-input-select" onchange="applyVoiceDevices()" style="cursor:pointer">
+            <option value="">Default microphone</option>
+          </select>
+          <div style="margin-top:8px;display:flex;align-items:center;gap:10px">
+            <div style="flex:1;height:6px;border-radius:3px;background:var(--border2);overflow:hidden">
+              <div id="mic-level-bar" style="height:100%;width:0%;background:var(--accent);border-radius:3px;transition:width 0.1s"></div>
+            </div>
+            <span style="font-size:10px;color:var(--text3);min-width:40px" id="mic-level-text">0%</span>
+          </div>
+          <div style="margin-top:6px;font-size:10px;color:var(--text3)">Speak to test your microphone level</div>
+        </div>
+        <div style="margin-bottom:20px;padding-bottom:20px;border-bottom:1px solid var(--border)">
+          <div class="field-label">Output Device (Speakers/Headphones)</div>
+          <select class="field" id="voice-output-select" onchange="applyVoiceDevices()" style="cursor:pointer">
+            <option value="">Default output</option>
+          </select>
+          <div id="voice-output-hint" style="margin-top:6px;font-size:10px;color:var(--text3)">Changes apply to next call</div>
+        </div>
+        <div style="margin-bottom:16px">
+          <div class="field-label">Audio Processing</div>
+          <div class="setting-row">
+            <div class="setting-label">Echo Cancellation</div>
+            <div class="toggle on" id="toggle-echo" onclick="toggleAudioSetting('echo',this)"></div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">Noise Suppression</div>
+            <div class="toggle on" id="toggle-noise" onclick="toggleAudioSetting('noise',this)"></div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">Auto Gain Control</div>
+            <div class="toggle on" id="toggle-gain" onclick="toggleAudioSetting('gain',this)"></div>
+          </div>
+        </div>
+        <button class="lang-btn active" onclick="refreshDeviceList()">↻ Refresh Devices</button>
       </div>
       <div class="pane" id="pane-network">
         <div class="modal-section-title">Network</div>
@@ -1332,7 +1372,139 @@ const ICE_CONFIG = {
   ]
 };
 
-// ── RESIZER ──
+// ── VOICE DEVICE SETTINGS ──
+let voiceInputDeviceId = localStorage.getItem('grid_input_device') || '';
+let voiceOutputDeviceId = localStorage.getItem('grid_output_device') || '';
+let audioSettings = {
+  echo:  localStorage.getItem('grid_echo')  !== 'false',
+  noise: localStorage.getItem('grid_noise') !== 'false',
+  gain:  localStorage.getItem('grid_gain')  !== 'false',
+};
+let micLevelAnimFrame = null;
+let micTestStream = null;
+
+function getAudioConstraints() {
+  const c = {
+    echoCancellation: audioSettings.echo,
+    noiseSuppression: audioSettings.noise,
+    autoGainControl:  audioSettings.gain,
+  };
+  if (voiceInputDeviceId) c.deviceId = { exact: voiceInputDeviceId };
+  return { audio: c, video: false };
+}
+
+async function applySinkId(audioEl) {
+  if (!audioEl || !voiceOutputDeviceId) return;
+  try {
+    if (typeof audioEl.setSinkId === 'function') {
+      await audioEl.setSinkId(voiceOutputDeviceId);
+    }
+  } catch(e) { console.warn('setSinkId failed:', e); }
+}
+
+async function applyVoiceDevices() {
+  voiceInputDeviceId  = document.getElementById('voice-input-select').value;
+  voiceOutputDeviceId = document.getElementById('voice-output-select').value;
+  localStorage.setItem('grid_input_device',  voiceInputDeviceId);
+  localStorage.setItem('grid_output_device', voiceOutputDeviceId);
+
+  // Update output hint
+  const hint = document.getElementById('voice-output-hint');
+  if (hint) hint.textContent = voiceOutputDeviceId
+    ? 'Output device saved — applies to next call'
+    : 'Changes apply to next call';
+
+  // Apply output to all currently active audio elements
+  const callAudio = document.getElementById('call-remote-audio');
+  if (callAudio) applySinkId(callAudio);
+  for (const audio of Object.values(audioElements)) applySinkId(audio);
+
+  // Re-test mic level with new device
+  startMicTest();
+  showNotif('Audio devices updated');
+}
+
+function toggleAudioSetting(key, el) {
+  audioSettings[key] = !audioSettings[key];
+  el.classList.toggle('on', audioSettings[key]);
+  localStorage.setItem('grid_' + key, audioSettings[key]);
+  startMicTest();
+  showNotif(key.charAt(0).toUpperCase() + key.slice(1) + (audioSettings[key] ? ' ON' : ' OFF'));
+}
+
+async function refreshDeviceList() {
+  // Request permission first so labels are visible
+  try {
+    const tmp = await navigator.mediaDevices.getUserMedia({ audio: true });
+    tmp.getTracks().forEach(t => t.stop());
+  } catch(e) {}
+
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const inputSel  = document.getElementById('voice-input-select');
+  const outputSel = document.getElementById('voice-output-select');
+  if (!inputSel || !outputSel) return;
+
+  const prevIn  = inputSel.value;
+  const prevOut = outputSel.value;
+
+  inputSel.innerHTML  = '<option value="">Default microphone</option>';
+  outputSel.innerHTML = '<option value="">Default output</option>';
+
+  devices.forEach(d => {
+    const opt = document.createElement('option');
+    opt.value = d.deviceId;
+    opt.textContent = d.label || (d.kind === 'audioinput' ? 'Microphone' : 'Speaker') + ' ' + d.deviceId.slice(0,6);
+    if (d.kind === 'audioinput')  inputSel.appendChild(opt);
+    if (d.kind === 'audiooutput') outputSel.appendChild(opt);
+  });
+
+  inputSel.value  = prevIn  || voiceInputDeviceId;
+  outputSel.value = prevOut || voiceOutputDeviceId;
+
+  // Check if setSinkId is supported
+  const hint = document.getElementById('voice-output-hint');
+  if (hint && typeof (new Audio()).setSinkId !== 'function') {
+    hint.textContent = '⚠ Output selection not supported in this browser';
+  }
+
+  startMicTest();
+}
+
+function startMicTest() {
+  stopMicTest();
+  navigator.mediaDevices.getUserMedia(getAudioConstraints()).then(stream => {
+    micTestStream = stream;
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = ctx.createMediaStreamSource(stream);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 256;
+    src.connect(analyser);
+    const buf = new Uint8Array(analyser.frequencyBinCount);
+    function tick() {
+      analyser.getByteFrequencyData(buf);
+      const avg = buf.reduce((a,b) => a+b, 0) / buf.length;
+      const pct = Math.min(100, Math.round(avg * 2.5));
+      const bar = document.getElementById('mic-level-bar');
+      const txt = document.getElementById('mic-level-text');
+      if (bar) bar.style.width = pct + '%';
+      if (bar) bar.style.background = pct > 70 ? 'var(--red)' : pct > 40 ? 'var(--amber)' : 'var(--accent)';
+      if (txt) txt.textContent = pct + '%';
+      micLevelAnimFrame = requestAnimationFrame(tick);
+    }
+    tick();
+  }).catch(() => {});
+}
+
+function stopMicTest() {
+  if (micLevelAnimFrame) { cancelAnimationFrame(micLevelAnimFrame); micLevelAnimFrame = null; }
+  if (micTestStream) { micTestStream.getTracks().forEach(t => t.stop()); micTestStream = null; }
+  const bar = document.getElementById('mic-level-bar');
+  const txt = document.getElementById('mic-level-text');
+  if (bar) bar.style.width = '0%';
+  if (txt) txt.textContent = '0%';
+}
+
+
 (function() {
   const sidebar = document.getElementById('grid-sub-panel');
   const resizer = document.getElementById('grid-resizer');
@@ -1933,7 +2105,7 @@ function toggleCallSound() {
 async function startCallWebRTC(peerUsername, isInitiator) {
   closeCallWebRTC(); // чистим старое если есть
   try {
-    callStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    callStream = await navigator.mediaDevices.getUserMedia(getAudioConstraints());
   } catch(e) {
     showNotif('Microphone access denied');
     return;
@@ -1957,6 +2129,7 @@ async function startCallWebRTC(peerUsername, isInitiator) {
     }
     audio.muted = callSoundMuted;
     audio.srcObject = e.streams[0];
+    applySinkId(audio);
   };
 
   callPc.onconnectionstatechange = () => {
@@ -2029,7 +2202,7 @@ async function joinVoiceChannel(ch) {
   if (currentVoiceChannel === ch) { leaveVoiceChannel(); return; }
   if (currentVoiceChannel) await leaveVoiceChannel();
   try {
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    localStream = await navigator.mediaDevices.getUserMedia(getAudioConstraints());
   } catch(e) { showNotif('Microphone access denied', 'voice'); return; }
   currentVoiceChannel = ch;
   document.getElementById('voice-bar').classList.add('active');
@@ -2088,6 +2261,7 @@ function createPeerConnection(username) {
     let audio = audioElements[username];
     if (!audio) { audio = new Audio(); audio.autoplay = true; audioElements[username] = audio; }
     audio.srcObject = e.streams[0];
+    applySinkId(audio);
   };
   pc.onconnectionstatechange = () => {
     if (pc.connectionState === 'failed' || pc.connectionState === 'closed') closePeer(username);
@@ -2652,12 +2826,22 @@ function updateMyProfile() {
 
 // ── MODAL ──
 function openModal() { document.getElementById('modal-overlay').classList.add('open') }
-function closeModal() { document.getElementById('modal-overlay').classList.remove('open') }
+function closeModal() { document.getElementById('modal-overlay').classList.remove('open'); stopMicTest(); }
 function switchTab(id, el) {
   document.querySelectorAll('.modal-tab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
   el.classList.add('active');
   document.getElementById('pane-'+id).classList.add('active');
+  if (id === 'voice') {
+    // sync toggle states from saved settings
+    ['echo','noise','gain'].forEach(k => {
+      const el2 = document.getElementById('toggle-'+k);
+      if (el2) el2.classList.toggle('on', audioSettings[k]);
+    });
+    refreshDeviceList();
+  } else {
+    stopMicTest();
+  }
 }
 
 function logout() {
