@@ -2124,8 +2124,6 @@ function toggleCallSound() {
 //  WebRTC для DM звонков
 // ══════════════════════════════
 
-let callAudioCtx = null; // AudioContext для обработки микрофона
-
 async function startCallWebRTC(peerUsername, isInitiator) {
   closeCallWebRTC(); // чистим старое если есть
 
