@@ -662,7 +662,43 @@ body{
 .btn-decline{background:rgba(255,255,255,0.02);border:1px solid var(--border2);border-radius:5px;color:var(--text3);font-size:11px;padding:4px 12px;cursor:pointer;font-family:'JetBrains Mono',monospace;transition:all 0.15s}
 .btn-decline:hover{color:var(--red)}
 
-/* ── MOBILE ── */
+/* ── CHANNEL LIST (server view) ── */
+.ch-item{
+  display:flex;align-items:center;gap:7px;padding:6px 10px;
+  border-radius:5px;margin:1px 5px;cursor:pointer;
+  font-size:11px;color:var(--text3);transition:all 0.15s;
+  text-transform:uppercase;letter-spacing:0.05em;
+}
+.ch-item:hover{background:rgba(255,255,255,0.03);color:var(--text2)}
+.ch-item.active{background:var(--accent-dim);color:var(--accent)}
+.ch-item i{font-size:12px;flex-shrink:0}
+
+.vc-item{
+  display:flex;align-items:center;gap:7px;padding:6px 10px;
+  border-radius:5px;margin:1px 5px;cursor:pointer;
+  font-size:11px;color:var(--text3);transition:all 0.15s;
+  letter-spacing:0.05em;
+}
+.vc-item:hover{background:var(--voice-dim);color:var(--voice)}
+.vc-item.active{background:var(--voice-dim);color:var(--voice);border:1px solid var(--voice-border)}
+.vc-item i{font-size:12px;flex-shrink:0}
+
+/* ── PENDING REQUESTS (isolated) ── */
+.pending-req-item{
+  display:flex;align-items:center;gap:8px;padding:7px 10px;
+  background:rgba(0,229,255,0.03);border:1px solid var(--accent-border);
+  border-radius:5px;margin:3px 5px;
+}
+.pending-req-name{flex:1;font-size:11px;color:var(--text2);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pending-req-btns{display:flex;gap:4px;flex-shrink:0}
+.btn-accept-sm{background:var(--accent-dim);border:1px solid var(--accent-border);border-radius:4px;color:var(--accent);font-size:9px;padding:2px 8px;cursor:pointer;font-family:'JetBrains Mono',monospace;transition:all 0.15s;letter-spacing:0.04em}
+.btn-accept-sm:hover{background:rgba(0,229,255,0.15)}
+.btn-decline-sm{background:none;border:1px solid var(--border2);border-radius:4px;color:var(--text3);font-size:9px;padding:2px 8px;cursor:pointer;font-family:'JetBrains Mono',monospace;transition:all 0.15s}
+.btn-decline-sm:hover{color:var(--red);border-color:rgba(255,68,102,0.3)}
+
+/* ── NAV MODE indicator on dock ── */
+.dock-logo.dm-active{background:var(--accent-dim)}
+
 @media(max-width:768px){
   body{overflow:auto;align-items:flex-start}
   .grid-sub-panel{width:100%!important}
@@ -713,8 +749,8 @@ body{
        GRID DOCK — 64px left strip
   ═══════════════════════════ -->
   <div class="grid-dock" id="grid-dock">
-    <!-- Logo / Hub -->
-    <div class="dock-logo" onclick="openModal()" title="GRID Hub">
+    <!-- Logo / Hub — click to switch to DM/contacts mode -->
+    <div class="dock-logo" onclick="setNavMode('dm')" title="Direct Messages" id="dock-logo-dm">
       <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
         <rect x="1" y="1" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.2" fill="none"/>
         <rect x="13" y="1" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.2" fill="none"/>
@@ -722,7 +758,7 @@ body{
         <rect x="13" y="13" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.2" fill="none"/>
         <circle cx="11" cy="11" r="2.5" fill="#00E5FF" opacity="0.9"/>
       </svg>
-      <span class="dock-tip">GRID Hub</span>
+      <span class="dock-tip">Messages & Contacts</span>
     </div>
 
     <div class="dock-sep"></div>
@@ -741,8 +777,8 @@ body{
 
     <div class="dock-sep"></div>
 
-    <!-- Server icons — subscribed servers -->
-    <div class="dock-server active" title="NODE_01" onclick="showNotif('NODE_01 — current server')">
+    <!-- Server icons — click to switch to server/channels mode -->
+    <div class="dock-server active" id="dock-server-node01" title="NODE_01" onclick="setNavMode('server')">
       <svg width="14" height="14" viewBox="0 0 22 22" fill="none">
         <rect x="1" y="1" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.5" fill="none"/>
         <rect x="13" y="1" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.5" fill="none"/>
@@ -777,7 +813,7 @@ body{
   </div>
 
   <!-- ═══════════════════════════
-       GRID SUB-PANEL — DM list
+       GRID SUB-PANEL — context-aware
   ═══════════════════════════ -->
   <div class="grid-sub-panel" id="grid-sub-panel">
 
@@ -789,19 +825,36 @@ body{
         <rect x="13" y="13" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.5" fill="none"/>
         <circle cx="11" cy="11" r="2.5" fill="#00E5FF"/>
       </svg>
-      <span class="sub-server-name">GRID · NODE_01</span>
+      <span class="sub-server-name" id="sub-panel-title">GRID · NODE_01</span>
     </div>
 
-    <div class="sub-scroll">
+    <!-- SERVER VIEW: channels + voice -->
+    <div id="server-view" class="sub-scroll">
+      <div class="sub-dm-label" style="margin-top:6px">TEXT CHANNELS</div>
+      <div id="channel-list"></div>
+      <div class="sub-dm-label" style="margin-top:8px">VOICE CHANNELS</div>
+      <div id="voice-channel-list"></div>
+      <!-- ONLINE USERS -->
+      <div class="sub-online-label" style="margin-top:8px">
+        [ ONLINE ]
+        <span class="sub-online-badge" id="online-count">0</span>
+      </div>
+      <div id="users-list"></div>
+    </div>
 
-      <!-- ADD FRIEND -->
+    <!-- DM VIEW: add friend, requests, DM list -->
+    <div id="dm-view" class="sub-scroll" style="display:none">
+      <!-- ADD FRIEND + REQUESTS tab -->
       <div class="sub-add-friend">
         <button class="sub-add-btn" onclick="focusAddFriend()">
           <i class="ti ti-user-plus"></i>
           [ ADD_FRIEND ]
+          <span id="req-badge" style="display:none;margin-left:auto;background:var(--accent);color:#000;font-size:9px;font-weight:700;padding:1px 6px;border-radius:5px;">0</span>
         </button>
         <input class="sub-search" id="add-friend-input" placeholder="Search ID..."
           maxlength="50" onkeydown="if(event.key==='Enter')addFriendByUsername()"/>
+        <!-- Pending requests panel (isolated) -->
+        <div id="pending-requests-list"></div>
       </div>
 
       <!-- DIRECT MESSAGES -->
@@ -810,15 +863,8 @@ body{
         <span class="sub-dm-badge" id="dm-count">0</span>
       </div>
       <div id="dm-list"></div>
-
-      <!-- ONLINE USERS -->
-      <div class="sub-online-label" style="margin-top:8px">
-        [ ONLINE ]
-        <span class="sub-online-badge" id="online-count">0</span>
-      </div>
-      <div id="users-list"></div>
-
     </div>
+
   </div>
 
   <!-- RESIZER -->
@@ -1007,10 +1053,26 @@ body{
 <div class="notif" id="notif"><div class="notif-dot" id="notif-dot"></div><span id="notif-text"></span></div>
 
 <script>
+// ── CHANNEL DEFINITIONS (dynamic, replaces hardcoded Russian names) ──
+const CHANNELS = [
+  { id: 'general', label: '[ CORE ]', desc: '— main channel' },
+  { id: 'gaming',  label: 'gaming',   desc: '— gaming' },
+  { id: 'feedback',label: 'feedback', desc: '— feedback' },
+];
+
+const VOICE_CHANNELS = [
+  { id: 'voice-1', label: 'Voice Gate 1' },
+  { id: 'voice-2', label: 'Voice Gate 2' },
+];
+
+// Map old Russian server channel ids to new English ids (for backwards compat with server)
+const CH_SERVER_MAP = { 'general':'общий', 'gaming':'игры', 'feedback':'фидбек' };
+const CH_SERVER_REVERSE = { 'общий':'general','игры':'gaming','фидбек':'feedback' };
+
 const i18n = {
   en: {
-    chDesc: { 'общий': '— main channel', 'игры': '— gaming', 'фидбек': '— feedback' },
-    chName: { 'общий': '[ CORE ]', 'игры': 'games', 'фидбек': 'feedback' },
+    chDesc: Object.fromEntries(CHANNELS.map(c=>[c.id, c.desc])),
+    chName: Object.fromEntries(CHANNELS.map(c=>[c.id, c.label])),
     placeholder: (ch) => `Secure connection transmission...`,
     dmPlaceholder: (name) => `Transmit to ${name}...`,
     dmDesc: '— direct message',
@@ -1026,7 +1088,10 @@ const t = i18n.en;
 
 // ── STATE ──
 let ws = null;
-let me = { name:'', color:'', channel:'общий' };
+let me = { name:'', color:'', channel:'general' };
+
+// ── NAVIGATION MODE: 'dm' (GRID logo) or 'server' (server icon) ──
+let navMode = 'server'; // default shows server channels
 let msgCount = 0;
 let typingTimer = null;
 let typingUsers = new Set();
@@ -1035,7 +1100,8 @@ let lastMsgAuthor = '';
 let hotkeys = { mute:'M' };
 let recordingFor = null;
 let friends = {};
-let pendingRequest = null;
+let pendingRequests = []; // isolated buffer — never auto-creates DM
+let pendingRequest = null; // current displayed popup
 let dmMode = false;
 let dmWith = null;
 let dmUnread = {};
@@ -1177,16 +1243,24 @@ function handleMsg(data) {
       data.history.forEach(m => renderMsg(m, true));
       scrollBottom();
       document.getElementById('modal-conn-status').textContent = 'connected';
+      renderChannelList();
+      // Switch to server mode by default
+      setNavMode('server');
+      // Set chat header to current channel
+      updateChatHeader(me.channel);
       break;
 
-    case 'message':
-      if (!dmMode && data.channel === me.channel) {
+    case 'message': {
+      // Normalize server channel id to English
+      const msgChId = CH_SERVER_REVERSE[data.channel] || data.channel;
+      if (!dmMode && msgChId === me.channel) {
         renderMsg(data, false); scrollBottom();
         msgCount++;
         document.getElementById('stat-msgs').textContent = msgCount;
       }
       if (data.username !== me.name) showNotif(`${data.username}: ${data.text.slice(0,40)}`);
       break;
+    }
 
     case 'dm': {
       const isFromMe = data.from === me.name;
@@ -1208,9 +1282,11 @@ function handleMsg(data) {
       scrollBottom();
       break;
 
-    case 'system':
-      if (!dmMode && data.channel === me.channel) addSystemMsg(data.text);
+    case 'system': {
+      const sysChId = CH_SERVER_REVERSE[data.channel] || data.channel;
+      if (!dmMode && sysChId === me.channel) addSystemMsg(data.text);
       break;
+    }
 
     case 'user_joined':
     case 'user_left':
@@ -1225,20 +1301,24 @@ function handleMsg(data) {
       scrollBottom();
       break;
 
-    case 'typing':
-      if (!dmMode && data.channel === me.channel) showTyping(data.username);
+    case 'typing': {
+      const typChId = CH_SERVER_REVERSE[data.channel] || data.channel;
+      if (!dmMode && typChId === me.channel) showTyping(data.username);
       break;
+    }
 
     case 'dm_typing':
       if (dmMode && dmWith && dmWith.username === data.from) showTyping(data.from);
       break;
 
     case 'friend_request':
-      pendingRequest = { name: data.from, username: data.from, color: data.fromColor };
-      document.getElementById('friend-req-name').textContent = data.from;
-      const req = document.getElementById('friend-req');
-      req.classList.add('show');
-      setTimeout(() => req.classList.remove('show'), 12000);
+      // Add to isolated pending buffer — never auto-creates DM
+      pendingRequests.push({ username: data.from, color: data.fromColor });
+      renderPendingRequests();
+      // switch to DM view so user sees the request badge
+      if (navMode !== 'dm') {
+        showNotif(`Contact request from ${data.from}`, 'blue');
+      }
       break;
 
     case 'friend_accepted':
@@ -1558,7 +1638,8 @@ function sendMessage() {
   if (dmMode && dmWith) {
     ws.send(JSON.stringify({ type:'dm', to: dmWith.username, text }));
   } else {
-    ws.send(JSON.stringify({ type:'message', text, channel: me.channel }));
+    const serverCh = CH_SERVER_MAP[me.channel] || me.channel;
+    ws.send(JSON.stringify({ type:'message', text, channel: serverCh }));
   }
   inp.value = '';
   inp.focus();
@@ -1575,21 +1656,129 @@ function handleTyping() {
   if (dmMode&&dmWith) {
     ws.send(JSON.stringify({ type:'typing', dm:true, to:dmWith.username }));
   } else {
-    ws.send(JSON.stringify({ type:'typing', channel:me.channel }));
+    const serverCh = CH_SERVER_MAP[me.channel] || me.channel;
+    ws.send(JSON.stringify({ type:'typing', channel: serverCh }));
   }
 }
 
-// ── CHANNELS ──
-function switchChannel(ch) {
-  dmMode=false; dmWith=null; me.channel=ch; lastMsgAuthor='';
-  document.getElementById('ch-name-display').textContent = t.chName[ch]||ch;
-  document.getElementById('ch-desc-display').textContent = t.chDesc[ch]||'';
-  document.getElementById('chat-input').placeholder = t.placeholder(ch);
+// ── NAV MODE (server/dm view toggle) ──
+function setNavMode(mode) {
+  navMode = mode;
+  const serverView = document.getElementById('server-view');
+  const dmView = document.getElementById('dm-view');
+  const title = document.getElementById('sub-panel-title');
+  const logoDm = document.getElementById('dock-logo-dm');
+  const serverBtn = document.getElementById('dock-server-node01');
+
+  if (mode === 'dm') {
+    serverView.style.display = 'none';
+    dmView.style.display = 'flex';
+    dmView.style.flexDirection = 'column';
+    title.textContent = 'GRID · Messages';
+    logoDm.classList.add('dm-active');
+    serverBtn.classList.remove('active');
+  } else {
+    serverView.style.display = 'flex';
+    serverView.style.flexDirection = 'column';
+    dmView.style.display = 'none';
+    title.textContent = 'GRID · NODE_01';
+    logoDm.classList.remove('dm-active');
+    serverBtn.classList.add('active');
+    // If in DM mode, switch back to last channel
+    if (dmMode) {
+      dmMode = false; dmWith = null;
+      const ch = me.channel || 'general';
+      updateChatHeader(ch);
+      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type:'switch_channel', channel: CH_SERVER_MAP[ch] || 'общий' }));
+    }
+  }
+}
+
+// ── RENDER CHANNEL LIST ──
+function renderChannelList() {
+  const list = document.getElementById('channel-list');
+  list.innerHTML = '';
+  CHANNELS.forEach(ch => {
+    const div = document.createElement('div');
+    div.className = 'ch-item' + (me.channel === ch.id ? ' active' : '');
+    div.dataset.ch = ch.id;
+    div.innerHTML = `<i class="ti ti-hash"></i>${ch.label}`;
+    div.onclick = () => switchChannel(ch.id);
+    list.appendChild(div);
+  });
+
+  const vclist = document.getElementById('voice-channel-list');
+  vclist.innerHTML = '';
+  VOICE_CHANNELS.forEach(vc => {
+    const div = document.createElement('div');
+    div.className = 'vc-item' + (currentVoiceChannel === vc.id ? ' active' : '');
+    div.dataset.vc = vc.id;
+    div.innerHTML = `<i class="ti ti-volume"></i>${vc.label}`;
+    div.onclick = () => joinVoiceChannel(vc.id);
+    vclist.appendChild(div);
+  });
+}
+
+// ── RENDER PENDING REQUESTS (isolated from DM list) ──
+function renderPendingRequests() {
+  const list = document.getElementById('pending-requests-list');
+  const badge = document.getElementById('req-badge');
+  list.innerHTML = '';
+  if (!pendingRequests.length) {
+    badge.style.display = 'none';
+    return;
+  }
+  badge.style.display = '';
+  badge.textContent = pendingRequests.length;
+  pendingRequests.forEach((req, idx) => {
+    const div = document.createElement('div');
+    div.className = 'pending-req-item';
+    div.innerHTML = `
+      <div class="pending-req-name" style="color:${req.color}">${esc(req.username)}</div>
+      <div class="pending-req-btns">
+        <button class="btn-accept-sm" onclick="acceptPendingReq(${idx})">Accept</button>
+        <button class="btn-decline-sm" onclick="declinePendingReq(${idx})">✕</button>
+      </div>`;
+    list.appendChild(div);
+  });
+}
+
+function acceptPendingReq(idx) {
+  const req = pendingRequests[idx];
+  if (!req) return;
+  friends[req.username] = { name: req.username, username: req.username, color: req.color, online: true };
+  ws.send(JSON.stringify({ type: 'friend_accept', toUsername: req.username }));
+  pendingRequests.splice(idx, 1);
+  renderPendingRequests();
+  renderFriendsPanel(); renderDmList();
+  showNotif(`${req.username} added!`, 'blue');
+}
+
+function declinePendingReq(idx) {
+  pendingRequests.splice(idx, 1);
+  renderPendingRequests();
+}
+
+function updateChatHeader(chId) {
+  const ch = CHANNELS.find(c => c.id === chId) || CHANNELS[0];
+  document.getElementById('ch-icon').className = 'ti ti-hash chat-ch-icon';
+  document.getElementById('ch-name-display').textContent = ch.label;
+  document.getElementById('ch-desc-display').textContent = ch.desc;
+  document.getElementById('chat-input').placeholder = t.placeholder(chId);
   document.getElementById('input-row').classList.remove('dm-mode');
   document.getElementById('call-btn').style.display = 'none';
+  // update active state in channel list
+  document.querySelectorAll('.ch-item').forEach(el => el.classList.toggle('active', el.dataset.ch === chId));
+}
+
+// ── CHANNELS ──
+function switchChannel(chId) {
+  dmMode=false; dmWith=null; me.channel=chId; lastMsgAuthor='';
+  updateChatHeader(chId);
   updateSendBtn();
-  unread[ch]=0;
-  if (ws&&ws.readyState===1) ws.send(JSON.stringify({ type:'switch_channel', channel:ch }));
+  unread[chId]=0;
+  const serverChId = CH_SERVER_MAP[chId] || chId;
+  if (ws&&ws.readyState===1) ws.send(JSON.stringify({ type:'switch_channel', channel: serverChId }));
 }
 
 function openDm(tag) {
@@ -1597,6 +1786,8 @@ function openDm(tag) {
   if (!friend) return;
   // End any active call when switching DM
   if (callActive) endCall();
+  // Switch to DM nav mode
+  setNavMode('dm');
   dmMode=true; dmWith={tag, username:tag, ...friend}; lastMsgAuthor='';
   document.querySelectorAll('.dm-entry').forEach(el=>el.classList.toggle('active',el.dataset.tag===tag));
   document.getElementById('ch-icon').className = 'ti ti-message chat-ch-icon';
@@ -1623,13 +1814,16 @@ function updateUserList(users) {
   users.forEach(u => {
     if (u.username===me.name) return;
     const isFriend = !!friends[u.username];
+    // Normalize channel name from Russian to English label
+    const chId = CH_SERVER_REVERSE[u.channel] || u.channel;
+    const chLabel = t.chName[chId] || chId;
     const div = document.createElement('div');
     div.className = 'sub-user-item';
     div.innerHTML = `
       <div class="f-av" style="background:${colorToBg(u.color)};color:${u.color}">${u.username[0].toUpperCase()}</div>
       <div style="flex:1;min-width:0">
         <div class="f-name">${esc(u.username)}</div>
-        <div class="f-ch">#${esc(t.chName[u.channel]||u.channel)}</div>
+        <div class="f-ch">#${esc(chLabel)}</div>
       </div>
       <div class="u-actions">
         ${isFriend
@@ -1665,6 +1859,7 @@ function sendFriendRequest(tag, color) {
 }
 
 function acceptFriend() {
+  // Legacy popup path — now handled by acceptPendingReq()
   if (!pendingRequest) return;
   friends[pendingRequest.username] = { name:pendingRequest.name, username:pendingRequest.username, color:pendingRequest.color, online:true };
   ws.send(JSON.stringify({ type:'friend_accept', toUsername:pendingRequest.username }));
@@ -1683,11 +1878,9 @@ function removeFriend(tag) {
   delete friends[tag]; renderFriendsPanel(); renderDmList();
   if (dmMode&&dmWith&&dmWith.tag===tag) {
     dmMode=false; dmWith=null;
-    document.getElementById('ch-icon').className = 'ti ti-hash chat-ch-icon';
-    document.getElementById('ch-name-display').textContent = t.chName['общий'];
-    document.getElementById('ch-desc-display').textContent = t.chDesc['общий'];
-    document.getElementById('call-btn').style.display = 'none';
-    if (ws&&ws.readyState===1) ws.send(JSON.stringify({ type:'switch_channel', channel:'общий' }));
+    const ch = me.channel || 'general';
+    updateChatHeader(ch);
+    if (ws&&ws.readyState===1) ws.send(JSON.stringify({ type:'switch_channel', channel: CH_SERVER_MAP[ch] || 'общий' }));
   }
 }
 
