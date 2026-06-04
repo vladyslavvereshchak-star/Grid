@@ -877,6 +877,7 @@ body{
 .msg-av img, .f-av img, .friend-card-av img, .sub-av-img {
   width:100%; height:100%; object-fit:cover; border-radius:50%; display:block;
 }
+.tb-btn{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:5px;cursor:pointer;color:#2a3540;font-size:11px;transition:all .15s}.tb-btn:hover{background:rgba(255,255,255,.06);color:#5a7080}.tb-close:hover{background:rgba(255,68,102,.15)!important;color:#ff4466!important}body.electron{padding-top:32px}
 </style>
 </head>
 <body>
@@ -906,6 +907,16 @@ body{
         <span class="login-switch-link" onclick="toggleAuthMode()" id="auth-toggle-link">Register</span>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- ELECTRON TITLEBAR -->
+<div id="etb" style="display:none;position:fixed;top:0;left:0;right:0;height:32px;background:#0b0c0d;border-bottom:1px solid rgba(255,255,255,0.04);z-index:9999;-webkit-app-region:drag;align-items:center;justify-content:space-between;padding:0 12px 0 16px">
+  <div style="-webkit-app-region:drag;display:flex;align-items:center;gap:8px"><svg width="14" height="14" viewBox="0 0 22 22" fill="none"><rect x="1" y="1" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.5" fill="none"/><rect x="13" y="1" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.5" fill="none"/><rect x="1" y="13" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.5" fill="none"/><rect x="13" y="13" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.5" fill="none"/><circle cx="11" cy="11" r="2.5" fill="#00E5FF"/></svg><span style="font-size:10px;color:#2a3540;letter-spacing:0.1em;font-family:JetBrains Mono,monospace;text-transform:uppercase">GRID</span></div>
+  <div style="-webkit-app-region:no-drag;display:flex;gap:2px">
+    <div onclick="window.electronAPI&&electronAPI.minimize()" class="tb-btn">─</div>
+    <div onclick="toggleMaximize()" id="tb-max" class="tb-btn">□</div>
+    <div onclick="window.electronAPI&&electronAPI.close()" class="tb-btn tb-close">✕</div>
   </div>
 </div>
 
@@ -1408,10 +1419,7 @@ function getAudioConstraints() {
     sampleRate:   { ideal: 48000 },
     latency:      { ideal: 0.01 },
   };
-  // Use 'ideal' not 'exact' — 'exact' throws OverconstrainedError if the saved
-  // deviceId changed (USB reconnect, driver update, reboot) and silently kills mic.
-  // 'ideal' tries the saved device and falls back to default if not found.
-  if (voiceInputDeviceId) c.deviceId = { ideal: voiceInputDeviceId };
+  if (voiceInputDeviceId) c.deviceId = { exact: voiceInputDeviceId };
   return { audio: c, video: false };
 }
 
@@ -1514,20 +1522,7 @@ function startMicTest() {
       micLevelAnimFrame = requestAnimationFrame(tick);
     }
     tick();
-  }).catch(err => {
-    const txt = document.getElementById('mic-level-text');
-    const bar = document.getElementById('mic-level-bar');
-    if (txt) txt.textContent = err.name === 'NotFoundError' ? 'Device not found'
-                             : err.name === 'NotAllowedError' ? 'Permission denied'
-                             : err.name === 'OverconstrainedError' ? 'Bad device ID — resetting'
-                             : err.name;
-    if (bar) { bar.style.width = '100%'; bar.style.background = 'var(--red)'; }
-    if (err.name === 'OverconstrainedError' && voiceInputDeviceId) {
-      voiceInputDeviceId = '';
-      localStorage.removeItem('grid_input_device');
-      setTimeout(startMicTest, 300);
-    }
-  });
+  }).catch(() => {});
 }
 
 function stopMicTest() {
@@ -2333,19 +2328,7 @@ async function joinVoiceChannel(ch) {
   if (currentVoiceChannel) await leaveVoiceChannel();
   try {
     localStream = await navigator.mediaDevices.getUserMedia(getAudioConstraints());
-  } catch(e) {
-    // If saved deviceId is stale, clear it and retry with default
-    if (e.name === 'OverconstrainedError' && voiceInputDeviceId) {
-      voiceInputDeviceId = '';
-      localStorage.removeItem('grid_input_device');
-      try {
-        localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      } catch(e2) { showNotif('Microphone access denied', 'voice'); return; }
-    } else {
-      showNotif(e.name === 'NotAllowedError' ? 'Microphone permission denied' : 'Microphone error: ' + e.name, 'voice');
-      return;
-    }
-  }
+  } catch(e) { showNotif('Microphone access denied', 'voice'); return; }
   currentVoiceChannel = ch;
   document.getElementById('voice-bar').classList.add('active');
   document.getElementById('voice-bar-name').textContent = ch;
@@ -3146,3 +3129,33 @@ document.getElementById('username-input').focus();
 </script>
 </body>
 </html>
+<script>
+// ── ELECTRON MODE ──
+if (window.electronAPI) {
+  // Показываем кастомный тайтлбар
+  document.body.classList.add('electron');
+  const etb = document.getElementById('etb');
+  if (etb) etb.style.display = 'flex';
+
+  // Кнопка maximize — меняем иконку
+  window.toggleMaximize = function() {
+    window.electronAPI.maximize();
+    setTimeout(() => {
+      const btn = document.getElementById('tb-max');
+      if (btn) btn.textContent = window.electronAPI.isMaximized() ? '❐' : '□';
+    }, 100);
+  };
+
+  // Перехватываем showNotif и дублируем как нативное уведомление
+  // когда окно не в фокусе
+  const _origNotif = window.showNotif;
+  if (typeof _origNotif === 'function') {
+    window.showNotif = function(text, type) {
+      _origNotif(text, type);
+      window.electronAPI.notify('GRID', text);
+    };
+  }
+} else {
+  window.toggleMaximize = function() {};
+}
+</script>
