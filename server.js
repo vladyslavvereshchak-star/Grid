@@ -259,6 +259,19 @@ wss.on('connection', (ws, req) => {
         break;
       }
 
+      // ── CALL SIGNALING — relay between two users ──
+      case 'call_invite':
+      case 'call_accept':
+      case 'call_decline':
+      case 'call_end':
+      case 'call_widget': {
+        const targetWs = findWsByUsername(data.to);
+        if (targetWs) {
+          sendTo(targetWs, { ...data, from: user.username, fromColor: user.color });
+        }
+        break;
+      }
+
       // ── ГОЛОСОВЫЕ КАНАЛЫ — WebRTC сигналинг ──
 
       case 'voice_join': {
