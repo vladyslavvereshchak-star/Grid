@@ -699,6 +699,70 @@ body{
 /* ── NAV MODE indicator on dock ── */
 .dock-logo.dm-active{background:var(--accent-dim)}
 
+/* ══════════════════════════════════
+   INCOMING CALL OVERLAY
+══════════════════════════════════ */
+#incoming-call-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,0.82);
+  display:none;align-items:center;justify-content:center;
+  z-index:255;flex-direction:column;
+}
+#incoming-call-overlay.active{display:flex}
+
+.call-accept-btn{
+  display:flex;align-items:center;gap:6px;
+  background:rgba(0,229,255,0.1);border:1px solid var(--accent-border);
+  border-radius:10px;padding:10px 22px;cursor:pointer;
+  font-size:12px;font-weight:700;color:var(--accent);
+  font-family:'JetBrains Mono',monospace;letter-spacing:0.06em;
+  transition:all 0.2s;
+}
+.call-accept-btn:hover{background:rgba(0,229,255,0.2);box-shadow:var(--accent-glow)}
+
+.call-decline-btn{
+  display:flex;align-items:center;gap:6px;
+  background:rgba(255,68,102,0.08);border:1px solid rgba(255,68,102,0.25);
+  border-radius:10px;padding:10px 22px;cursor:pointer;
+  font-size:12px;font-weight:700;color:var(--red);
+  font-family:'JetBrains Mono',monospace;letter-spacing:0.06em;
+  transition:all 0.2s;
+}
+.call-decline-btn:hover{background:rgba(255,68,102,0.18)}
+
+/* ── CHAT CALL WIDGET (posted in channel after 30s) ── */
+.chat-call-widget{
+  display:flex;align-items:center;gap:12px;
+  background:linear-gradient(135deg,rgba(0,229,255,0.06),rgba(0,229,255,0.02));
+  border:1px solid var(--accent-border);border-radius:8px;
+  padding:10px 14px;margin:6px 8px;cursor:pointer;
+  transition:all 0.2s;position:relative;overflow:hidden;
+}
+.chat-call-widget::before{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(90deg,transparent,rgba(0,229,255,0.04),transparent);
+  animation:widgetScan 3s linear infinite;
+}
+@keyframes widgetScan{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+.chat-call-widget:hover{background:rgba(0,229,255,0.1);box-shadow:var(--accent-glow)}
+.widget-pulse{
+  width:8px;height:8px;border-radius:50%;background:var(--accent);flex-shrink:0;
+  animation:widgetPulse 1.5s ease-in-out infinite;
+}
+@keyframesWidgetPulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(0,229,255,0.4)}50%{opacity:0.7;box-shadow:0 0 0 5px rgba(0,229,255,0)}}
+@keyframes widgetPulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(0,229,255,0.4)}50%{opacity:0.7;box-shadow:0 0 0 5px rgba(0,229,255,0)}}
+.widget-text{flex:1;min-width:0}
+.widget-title{font-size:11px;font-weight:700;color:var(--accent);letter-spacing:0.06em}
+.widget-sub{font-size:10px;color:var(--text3);letter-spacing:0.04em;margin-top:1px}
+.widget-join-btn{
+  background:var(--accent-dim);border:1px solid var(--accent-border);
+  border-radius:5px;color:var(--accent);font-size:10px;font-weight:700;
+  padding:4px 12px;cursor:pointer;font-family:'JetBrains Mono',monospace;
+  letter-spacing:0.06em;transition:all 0.15s;white-space:nowrap;flex-shrink:0;
+}
+.widget-join-btn:hover{background:rgba(0,229,255,0.18)}
+.chat-call-widget.ended{border-color:var(--border2);opacity:0.5;pointer-events:none}
+.chat-call-widget.ended .widget-pulse{background:var(--text3);animation:none}
+
 @media(max-width:768px){
   body{overflow:auto;align-items:flex-start}
   .grid-sub-panel{width:100%!important}
@@ -944,10 +1008,10 @@ body{
   </div>
 </div>
 
-<!-- CALL OVERLAY -->
+<!-- OUTGOING CALL OVERLAY (caller sees this) -->
 <div id="call-overlay">
   <div class="call-card">
-    <div class="call-label">OUTGOING CALL</div>
+    <div class="call-label" id="call-direction-label">OUTGOING CALL</div>
     <div class="call-ripple-wrap">
       <div class="ripple"></div>
       <div class="ripple"></div>
@@ -956,13 +1020,43 @@ body{
       <div class="call-avatar" id="call-avatar" style="background:#0a0d10;color:#00E5FF">?</div>
     </div>
     <div class="call-name" id="call-contact-name">—</div>
-    <div class="call-state" id="call-state-label">Establishing connection...</div>
+    <div class="call-state" id="call-state-label">Searching frequency...</div>
+    <!-- Solo mode info (when waiting alone after timeout) -->
+    <div id="call-solo-hint" style="display:none;font-size:10px;color:var(--text3);letter-spacing:0.06em;text-align:center;margin-top:-8px">
+      Channel is open · Waiting for connection
+    </div>
+  </div>
+</div>
+
+<!-- INCOMING CALL OVERLAY (receiver sees this) -->
+<div id="incoming-call-overlay">
+  <div class="call-card" style="border-color:rgba(0,229,255,0.25)">
+    <div class="call-label" style="color:var(--accent)">⟶ INCOMING CALL</div>
+    <div class="call-ripple-wrap">
+      <div class="ripple" style="border-color:rgba(0,229,255,0.6)"></div>
+      <div class="ripple" style="border-color:rgba(0,229,255,0.6)"></div>
+      <div class="ripple" style="border-color:rgba(0,229,255,0.6)"></div>
+      <div class="call-avatar" id="incoming-call-avatar" style="background:#0a0d10;color:#00E5FF">?</div>
+    </div>
+    <div class="call-name" id="incoming-call-name">—</div>
+    <div class="call-state" style="animation:none;opacity:0.6">wants to connect</div>
+    <div style="display:flex;gap:14px;margin-top:8px">
+      <div class="call-accept-btn" onclick="acceptIncomingCall()">
+        <i class="ti ti-phone"></i> Accept
+      </div>
+      <div class="call-decline-btn" onclick="declineIncomingCall()">
+        <i class="ti ti-phone-off"></i> Decline
+      </div>
+    </div>
+    <div id="incoming-timeout-bar-wrap" style="width:100%;height:2px;background:var(--border2);border-radius:2px;margin-top:8px;overflow:hidden">
+      <div id="incoming-timeout-bar" style="height:100%;background:var(--accent);width:100%;transition:width 30s linear"></div>
+    </div>
   </div>
 </div>
 
 <!-- CALL CONTROLS BAR -->
 <div id="call-controls">
-  <span class="call-timer" id="call-timer">00:00:00</span>
+  <span class="call-timer" id="call-timer">00:00</span>
   <div class="call-sep"></div>
   <div class="call-ctrl-btn" id="call-mute-btn" onclick="toggleCallMute()" title="Mute">
     <i class="ti ti-microphone" id="call-mute-icon"></i>
@@ -1112,13 +1206,6 @@ let localStream = null;
 let micMuted = false;
 let peerConnections = {};
 let audioElements = {};
-
-// ── CALL STATE ──
-let callActive = false;
-let callTimer = null;
-let callSeconds = 0;
-let callMuted = false;
-let callSoundMuted = false;
 
 const ICE_CONFIG = {
   iceServers:[
@@ -1334,91 +1421,340 @@ function handleMsg(data) {
     case 'voice_offer': handleVoiceOffer(data); break;
     case 'voice_answer': handleVoiceAnswer(data); break;
     case 'voice_ice': handleVoiceIce(data); break;
+
+    // ── CALL SIGNALING ──
+    case 'call_invite':  handleCallInvite(data);  break;
+    case 'call_accept':  handleCallAccepted(data); break;
+    case 'call_decline': handleCallDeclined(data); break;
+    case 'call_end':     handleCallEnded(data);    break;
+    case 'call_widget':
+      // Show in-chat widget to the callee
+      if (dmMode && dmWith && dmWith.username === data.from) {
+        renderCallWidget(data);
+      }
+      break;
+}
+
+// ══════════════════════════════════════════════════════
+//  CALL SYSTEM v2 — WebSocket signaling + solo mode
+//
+//  Flow (caller):
+//    startCall() → ws send call_invite
+//      → 30s timeout fires:
+//          post chat widget, enter solo mode
+//          3min auto-hangup if still alone
+//  Flow (callee):
+//    ws receives call_invite → show incoming overlay
+//      → Accept: ws send call_accept → both enter connected
+//      → Decline: ws send call_decline → caller sees declined
+//      → 30s no answer: auto-dismiss for callee
+// ══════════════════════════════════════════════════════
+
+let callActive    = false;   // true once connected (both sides in)
+let callSolo      = false;   // caller is waiting alone in room
+let callPeer      = null;    // { username, color } of the other party
+let callTimer     = null;    // setInterval for HH:MM timer display
+let callSeconds   = 0;
+let callMuted     = false;
+let callSoundMuted= false;
+
+// Server-side timeouts (cleared on answer/decline/hangup)
+let callRingTimeout   = null; // 30s ring → widget + solo mode
+let callSoloTimeout   = null; // 3min solo → auto-hangup
+let callIncomingTimer = null; // 30s for callee overlay auto-dismiss
+
+// The widget DOM element posted in chat (so we can mark it ended)
+let callWidgetEl = null;
+
+// ── CALLER: initiate ──
+function startCall() {
+  if (!dmMode || !dmWith) return;
+  if (callActive || callSolo) { endCall(); return; }
+
+  callPeer = { username: dmWith.username, color: dmWith.color || me.color };
+  callSolo = false;
+
+  // Show caller overlay
+  const friend = friends[dmWith.tag] || dmWith;
+  const color  = friend.color || me.color;
+  setCallCard('call-overlay', friend.name || dmWith.username, color, 'OUTGOING CALL', 'Searching frequency...');
+  showCallOverlay('call-overlay', true);
+  document.getElementById('call-solo-hint').style.display = 'none';
+
+  // Update call button
+  const btn = document.getElementById('call-btn');
+  btn.classList.add('in-call');
+  btn.innerHTML = '<i class="ti ti-phone-off"></i>';
+
+  // Signal the other side
+  wsSend({ type: 'call_invite', to: dmWith.username, fromColor: me.color });
+
+  // 30-second ring timeout → post widget + solo mode
+  callRingTimeout = setTimeout(() => {
+    callRingTimeout = null;
+    enterSoloMode();
+  }, 30000);
+}
+
+function enterSoloMode() {
+  callSolo = true;
+  document.getElementById('call-state-label').textContent = 'No answer · Channel open';
+  document.getElementById('call-solo-hint').style.display = 'block';
+  // Post the chat widget so the friend can join from the channel
+  postCallWidget();
+  // Start solo timer display
+  startCallTimer();
+  // 3 minutes alone → auto-hangup
+  callSoloTimeout = setTimeout(() => {
+    callSoloTimeout = null;
+    endCall(true); // silent auto-close
+  }, 3 * 60 * 1000);
+}
+
+// ── CALLER: peer accepted ──
+function handleCallAccepted(data) {
+  // Cancel ring timeout if still running
+  if (callRingTimeout) { clearTimeout(callRingTimeout); callRingTimeout = null; }
+  if (callSoloTimeout) { clearTimeout(callSoloTimeout); callSoloTimeout = null; }
+  callSolo = false;
+  callActive = true;
+  // Remove widget if posted
+  markWidgetEnded();
+  document.getElementById('call-state-label').textContent = 'Connected';
+  document.getElementById('call-solo-hint').style.display = 'none';
+  startCallTimer();
+  showNotif(`${data.from} joined the call`, 'blue');
+}
+
+// ── CALLER: peer declined ──
+function handleCallDeclined(data) {
+  if (callRingTimeout) { clearTimeout(callRingTimeout); callRingTimeout = null; }
+  endCall();
+  showNotif(`${data.from} declined the call`);
+}
+
+// ── CALLER: peer left mid-call ──
+function handleCallEnded(data) {
+  endCall();
+  if (data && data.from) showNotif(`${data.from} left the call`);
+}
+
+// ── CALLEE: receive incoming ──
+function handleCallInvite(data) {
+  // Show incoming overlay with timeout bar
+  const color = data.fromColor || '#00E5FF';
+  setCallCard('incoming-call-overlay', data.from, color, null, null);
+  document.getElementById('incoming-call-name').textContent = data.from;
+  const av = document.getElementById('incoming-call-avatar');
+  av.textContent = data.from[0].toUpperCase();
+  av.style.color  = color;
+  av.style.background = colorToBg(color);
+  showCallOverlay('incoming-call-overlay', true);
+
+  // Animate timeout bar shrinking over 30s
+  const bar = document.getElementById('incoming-timeout-bar');
+  bar.style.transition = 'none';
+  bar.style.width = '100%';
+  void bar.offsetWidth;
+  bar.style.transition = 'width 30s linear';
+  bar.style.width = '0%';
+
+  // Auto-dismiss after 30s (no answer)
+  callIncomingTimer = setTimeout(() => {
+    callIncomingTimer = null;
+    showCallOverlay('incoming-call-overlay', false);
+  }, 30000);
+
+  // Store who is calling
+  callPeer = { username: data.from, color };
+}
+
+function acceptIncomingCall() {
+  if (callIncomingTimer) { clearTimeout(callIncomingTimer); callIncomingTimer = null; }
+  showCallOverlay('incoming-call-overlay', false);
+
+  // Signal caller
+  wsSend({ type: 'call_accept', to: callPeer.username });
+
+  // Enter connected state on callee side
+  callActive = true; callSolo = false;
+  setCallCard('call-overlay', callPeer.username, callPeer.color, 'CONNECTED', 'Connected');
+  showCallOverlay('call-overlay', true);
+  document.getElementById('call-direction-label').textContent = 'CONNECTED';
+  document.getElementById('call-state-label').textContent = 'Connected';
+  document.getElementById('call-solo-hint').style.display = 'none';
+  startCallTimer();
+
+  const btn = document.getElementById('call-btn');
+  btn.classList.add('in-call');
+  btn.innerHTML = '<i class="ti ti-phone-off"></i>';
+}
+
+function declineIncomingCall() {
+  if (callIncomingTimer) { clearTimeout(callIncomingTimer); callIncomingTimer = null; }
+  showCallOverlay('incoming-call-overlay', false);
+  if (callPeer) {
+    wsSend({ type: 'call_decline', to: callPeer.username });
+    callPeer = null;
   }
 }
 
-// ══════════════════════════════
-//  CALL SYSTEM
-// ══════════════════════════════
-function startCall() {
-  if (!dmMode || !dmWith) return;
-  if (callActive) { endCall(); return; }
-  callActive = true;
-  callSeconds = 0;
+// ── HANG UP (both sides) ──
+function endCall(silent = false) {
+  // Clear all timers
+  if (callRingTimeout)   { clearTimeout(callRingTimeout);   callRingTimeout = null; }
+  if (callSoloTimeout)   { clearTimeout(callSoloTimeout);   callSoloTimeout = null; }
+  if (callIncomingTimer) { clearTimeout(callIncomingTimer); callIncomingTimer = null; }
+  if (callTimer)         { clearInterval(callTimer);        callTimer = null; }
 
-  // Populate call card
-  const friend = friends[dmWith.tag] || dmWith;
-  const initial = (friend.name || dmWith.username || '?')[0].toUpperCase();
-  const color = friend.color || me.color;
-  const bg = colorToBg(color);
+  // Signal the peer (if they exist and connection is live)
+  if (callPeer && ws && ws.readyState === 1) {
+    wsSend({ type: 'call_end', to: callPeer.username });
+  }
 
-  const av = document.getElementById('call-avatar');
-  av.textContent = initial;
-  av.style.background = bg;
-  av.style.color = color;
+  callActive = false; callSolo = false;
+  callMuted  = false; callSoundMuted = false;
+  callSeconds = 0; callPeer = null;
 
-  document.getElementById('call-contact-name').textContent = friend.name || dmWith.username;
-  document.getElementById('call-state-label').textContent = 'Establishing connection...';
+  // Mark widget ended
+  markWidgetEnded();
 
-  // Dim chat
-  document.getElementById('messages').classList.add('call-dimmed');
+  // Hide overlays
+  showCallOverlay('call-overlay', false);
+  showCallOverlay('incoming-call-overlay', false);
 
-  // Show overlay + controls
-  const overlay = document.getElementById('call-overlay');
-  overlay.style.display = 'flex';
-  // force reflow for transition
-  void overlay.offsetWidth;
-  overlay.classList.add('active');
-  document.getElementById('call-controls').classList.add('active');
-
-  // Update call button
-  const callBtn = document.getElementById('call-btn');
-  callBtn.classList.add('in-call');
-  callBtn.innerHTML = '<i class="ti ti-phone-off"></i>';
-
-  // Start timer after short delay
-  setTimeout(() => {
-    document.getElementById('call-state-label').textContent = 'Connected';
-    callTimer = setInterval(updateCallTimer, 1000);
-  }, 2200);
-}
-
-function endCall() {
-  callActive = false;
-  clearInterval(callTimer); callTimer = null;
-  callSeconds = 0;
-  callMuted = false;
-  callSoundMuted = false;
-
-  // Reset call mute states
+  // Reset controls
+  document.getElementById('call-controls').classList.remove('active');
+  document.getElementById('call-timer').textContent = '00:00';
   document.getElementById('call-mute-btn').classList.remove('muted');
   document.getElementById('call-mute-icon').className = 'ti ti-microphone';
   document.getElementById('call-sound-btn').classList.remove('muted');
   document.getElementById('call-sound-icon').className = 'ti ti-volume';
-
-  // Animate out
-  const overlay = document.getElementById('call-overlay');
-  overlay.classList.remove('active');
-  document.getElementById('call-controls').classList.remove('active');
-  setTimeout(() => { overlay.style.display = 'none'; }, 400);
-
-  // Undim chat
   document.getElementById('messages').classList.remove('call-dimmed');
 
   // Reset call button
-  const callBtn = document.getElementById('call-btn');
-  callBtn.classList.remove('in-call');
-  callBtn.innerHTML = '<i class="ti ti-phone"></i>';
+  const btn = document.getElementById('call-btn');
+  btn.classList.remove('in-call');
+  btn.innerHTML = '<i class="ti ti-phone"></i>';
 
-  document.getElementById('call-timer').textContent = '00:00:00';
+  if (!silent && callActive) showNotif('Call ended');
+}
+
+// ── HELPERS ──
+function setCallCard(overlayId, name, color, label, state) {
+  if (overlayId === 'call-overlay') {
+    if (label) document.getElementById('call-direction-label').textContent = label;
+    if (state) document.getElementById('call-state-label').textContent = state;
+    document.getElementById('call-contact-name').textContent = name;
+    const av = document.getElementById('call-avatar');
+    av.textContent = name[0].toUpperCase();
+    av.style.color = color; av.style.background = colorToBg(color);
+  }
+}
+
+function showCallOverlay(id, show) {
+  const el = document.getElementById(id);
+  if (show) {
+    el.style.display = 'flex';
+    void el.offsetWidth;
+    el.classList.add('active');
+    document.getElementById('messages').classList.add('call-dimmed');
+    if (id === 'call-overlay') document.getElementById('call-controls').classList.add('active');
+  } else {
+    el.classList.remove('active');
+    if (id === 'call-overlay') {
+      document.getElementById('messages').classList.remove('call-dimmed');
+      document.getElementById('call-controls').classList.remove('active');
+    }
+    setTimeout(() => { el.style.display = 'none'; }, 400);
+  }
+}
+
+function startCallTimer() {
+  callSeconds = 0;
+  if (callTimer) clearInterval(callTimer);
+  callTimer = setInterval(() => {
+    callSeconds++;
+    const m = String(Math.floor(callSeconds / 60)).padStart(2,'0');
+    const s = String(callSeconds % 60).padStart(2,'0');
+    document.getElementById('call-timer').textContent = `${m}:${s}`;
+  }, 1000);
+}
+
+// ── CHAT WIDGET: post to channel after ring timeout ──
+function postCallWidget() {
+  const msgs = document.getElementById('messages');
+  const widget = document.createElement('div');
+  widget.className = 'chat-call-widget';
+  widget.dataset.callWidget = '1';
+  const friendName = callPeer ? callPeer.username : '—';
+  widget.innerHTML = `
+    <div class="widget-pulse"></div>
+    <div class="widget-text">
+      <div class="widget-title">⟶ ACTIVE CALL · ${esc(me.name)}</div>
+      <div class="widget-sub">Voice channel open · Click to join</div>
+    </div>
+    <div class="widget-join-btn" onclick="joinCallFromWidget(this)">[ JOIN ]</div>`;
+  msgs.appendChild(widget);
+  scrollBottom();
+  callWidgetEl = widget;
+
+  // Send the widget as a special DM so the friend also sees it in their chat
+  if (callPeer && ws && ws.readyState === 1) {
+    wsSend({ type: 'call_widget', to: callPeer.username, from: me.name, fromColor: me.color });
+  }
+}
+
+function markWidgetEnded() {
+  if (callWidgetEl) {
+    callWidgetEl.classList.add('ended');
+    const btn = callWidgetEl.querySelector('.widget-join-btn');
+    if (btn) btn.textContent = '[ ENDED ]';
+    callWidgetEl = null;
+  }
+  // Also mark any in-chat widgets from messages list
+  document.querySelectorAll('.chat-call-widget:not(.ended)').forEach(el => {
+    el.classList.add('ended');
+    const btn = el.querySelector('.widget-join-btn');
+    if (btn) btn.textContent = '[ ENDED ]';
+  });
+}
+
+// Callee clicks widget to join
+function joinCallFromWidget(btn) {
+  if (!callPeer) return;
+  acceptIncomingCall();
+}
+
+// Handle incoming call_widget message (shown in callee's DM chat)
+function renderCallWidget(data) {
+  const msgs = document.getElementById('messages');
+  const widget = document.createElement('div');
+  widget.className = 'chat-call-widget';
+  widget.dataset.callWidgetIncoming = '1';
+  widget.innerHTML = `
+    <div class="widget-pulse"></div>
+    <div class="widget-text">
+      <div class="widget-title">⟶ ACTIVE CALL · ${esc(data.from)}</div>
+      <div class="widget-sub">Voice channel open · Click to join</div>
+    </div>
+    <div class="widget-join-btn" onclick="acceptIncomingCallFromWidget()">[ JOIN ]</div>`;
+  msgs.appendChild(widget);
+  scrollBottom();
+  callWidgetEl = widget;
+}
+
+function acceptIncomingCallFromWidget() {
+  if (!callPeer) return;
+  acceptIncomingCall();
+}
+
+function wsSend(data) {
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify(data));
 }
 
 function updateCallTimer() {
-  callSeconds++;
-  const h = String(Math.floor(callSeconds/3600)).padStart(2,'0');
-  const m = String(Math.floor((callSeconds%3600)/60)).padStart(2,'0');
-  const s = String(callSeconds%60).padStart(2,'0');
-  document.getElementById('call-timer').textContent = `${h}:${m}:${s}`;
+  // Legacy shim — no longer used directly, kept for safety
 }
 
 function toggleCallMute() {
