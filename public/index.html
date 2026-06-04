@@ -1385,9 +1385,13 @@ let micTestStream = null;
 
 function getAudioConstraints() {
   const c = {
-    echoCancellation: audioSettings.echo,
-    noiseSuppression: audioSettings.noise,
-    autoGainControl:  audioSettings.gain,
+    echoCancellation: { ideal: audioSettings.echo },
+    noiseSuppression: { ideal: audioSettings.noise },
+    autoGainControl:  { ideal: audioSettings.gain },
+    // Tells the browser this is a real-time VoIP stream — activates hardware AEC
+    channelCount: { ideal: 1 },
+    sampleRate:   { ideal: 48000 },
+    latency:      { ideal: 0.01 },
   };
   if (voiceInputDeviceId) c.deviceId = { exact: voiceInputDeviceId };
   return { audio: c, video: false };
@@ -2125,6 +2129,8 @@ async function startCallWebRTC(peerUsername, isInitiator) {
       audio = document.createElement('audio');
       audio.id = 'call-remote-audio';
       audio.autoplay = true;
+      audio.setAttribute('playsinline', '');
+      audio.style.display = 'none';
       document.body.appendChild(audio);
     }
     audio.muted = callSoundMuted;
@@ -2259,7 +2265,15 @@ function createPeerConnection(username) {
   };
   pc.ontrack = (e) => {
     let audio = audioElements[username];
-    if (!audio) { audio = new Audio(); audio.autoplay = true; audioElements[username] = audio; }
+    if (!audio) {
+      audio = document.createElement('audio');
+      audio.autoplay = true;
+      audio.setAttribute('playsinline', '');
+      // Must be in the DOM for browser AEC to link output back to input cancellation
+      audio.style.display = 'none';
+      document.body.appendChild(audio);
+      audioElements[username] = audio;
+    }
     audio.srcObject = e.streams[0];
     applySinkId(audio);
   };
@@ -2271,7 +2285,11 @@ function createPeerConnection(username) {
 
 function closePeer(username) {
   if (peerConnections[username]) { peerConnections[username].close(); delete peerConnections[username]; }
-  if (audioElements[username]) { audioElements[username].srcObject = null; delete audioElements[username]; }
+  if (audioElements[username]) {
+    audioElements[username].srcObject = null;
+    if (audioElements[username].parentNode) audioElements[username].parentNode.removeChild(audioElements[username]);
+    delete audioElements[username];
+  }
 }
 
 function handlePeerLeft(username) { closePeer(username); updateVoiceBar(); }
