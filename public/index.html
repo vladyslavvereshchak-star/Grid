@@ -716,11 +716,31 @@ body{
    INCOMING CALL OVERLAY
 ══════════════════════════════════ */
 #incoming-call-overlay{
-  position:fixed;inset:0;background:rgba(0,0,0,0.82);
-  display:none;align-items:center;justify-content:center;
+  position:fixed;bottom:28px;right:28px;
+  background:transparent;
+  display:none;align-items:flex-end;justify-content:flex-end;
   z-index:255;flex-direction:column;
+  pointer-events:none;
 }
-#incoming-call-overlay.active{display:flex}
+#incoming-call-overlay.active{display:flex;pointer-events:all}
+#incoming-call-overlay .call-card{
+  padding:28px 32px 24px;
+  border:1px solid rgba(0,229,255,0.22);
+  box-shadow:
+    0 0 0 1px rgba(0,229,255,0.08),
+    0 8px 32px rgba(0,0,0,0.75),
+    0 24px 64px rgba(0,0,0,0.65),
+    -8px 0 48px rgba(0,0,0,0.5),
+    0 0 80px rgba(0,229,255,0.07);
+  min-width:260px;
+}
+@keyframes slideUpIn{
+  from{transform:translateY(32px);opacity:0}
+  to{transform:translateY(0);opacity:1}
+}
+#incoming-call-overlay.active .call-card{
+  animation:slideUpIn 0.35s var(--ease) forwards;
+}
 
 .call-accept-btn{
   display:flex;align-items:center;gap:6px;
@@ -1770,19 +1790,14 @@ function showCallOverlay(id, show) {
       msgs.classList.remove('call-dimmed-soft');
       msgs.classList.add('call-dimmed');
       document.getElementById('call-controls').classList.add('active');
-    } else if (id === 'incoming-call-overlay') {
-      if (!msgs.classList.contains('call-dimmed')) {
-        msgs.classList.add('call-dimmed-soft');
-      }
     }
+    // incoming-call-overlay is now a floating popup — no dimming needed
   } else {
     el.classList.remove('active');
     if (id === 'call-overlay') {
       msgs.classList.remove('call-dimmed');
       msgs.classList.remove('call-dimmed-soft');
       document.getElementById('call-controls').classList.remove('active');
-    } else if (id === 'incoming-call-overlay') {
-      msgs.classList.remove('call-dimmed-soft');
     }
     setTimeout(() => { el.style.display = 'none'; }, 400);
   }
