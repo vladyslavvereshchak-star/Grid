@@ -11,7 +11,7 @@ const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
 app.use(express.static(path.join(__dirname, 'public')));
-app.use(express.json());
+app.use(express.json({ limit: '3mb' }));
 
 const JWT_SECRET = process.env.JWT_SECRET || 'grid-secret-key-change-in-prod';
 
@@ -27,6 +27,7 @@ async function initDB() {
       username VARCHAR(50) UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
       color VARCHAR(20) NOT NULL,
+      avatar TEXT DEFAULT NULL,
       created_at TIMESTAMP DEFAULT NOW()
     );
     CREATE TABLE IF NOT EXISTS friends (
@@ -35,6 +36,10 @@ async function initDB() {
       PRIMARY KEY (user1_id, user2_id)
     );
   `);
+  // Add avatar column if upgrading existing DB
+  await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT DEFAULT NULL;
+  `).catch(() => {});
   console.log('✅ БД готова');
 }
 
@@ -75,7 +80,7 @@ app.post('/api/login', async (req, res) => {
     const ok = await bcrypt.compare(password, user.password_hash);
     if (!ok) return res.status(401).json({ error: 'Неверный логин или пароль' });
     const token = jwt.sign({ id: user.id, username: user.username, color: user.color }, JWT_SECRET);
-    res.json({ token, username: user.username, color: user.color });
+    res.json({ token, username: user.username, color: user.color, avatar: user.avatar || null });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Ошибка сервера' });
@@ -87,8 +92,7 @@ app.post('/api/change-password', async (req, res) => {
   const auth = req.headers.authorization;
   if (!auth) return res.status(401).json({ error: 'Нет токена' });
   try {
-    const jwt2 = require('jsonwebtoken');
-    const user = jwt2.verify(auth.replace('Bearer ', ''), JWT_SECRET);
+    const user = jwt.verify(auth.replace('Bearer ', ''), JWT_SECRET);
     const { password } = req.body;
     if (!password || password.length < 6) return res.status(400).json({ error: 'Пароль минимум 6 символов' });
     const hash = await bcrypt.hash(password, 10);
@@ -99,12 +103,44 @@ app.post('/api/change-password', async (req, res) => {
   }
 });
 
+// REST API — Обновление аватара
+app.post('/api/avatar', async (req, res) => {
+  const auth = req.headers.authorization;
+  if (!auth) return res.status(401).json({ error: 'Нет токена' });
+  try {
+    const user = jwt.verify(auth.replace('Bearer ', ''), JWT_SECRET);
+    const { avatar } = req.body; // base64 data URL or null to remove
+
+    // Validate: must be data URL or null
+    if (avatar !== null && avatar !== undefined) {
+      if (!avatar.startsWith('data:image/')) return res.status(400).json({ error: 'Invalid image format' });
+      if (avatar.length > 200000) return res.status(400).json({ error: 'Image too large' }); // ~150KB max
+    }
+
+    await pool.query('UPDATE users SET avatar=$1 WHERE id=$2', [avatar || null, user.id]);
+
+    // Broadcast avatar update to all online users
+    const avatarUpdate = JSON.stringify({
+      type: 'avatar_update',
+      username: user.username,
+      avatar: avatar || null
+    });
+    wss.clients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) client.send(avatarUpdate);
+    });
+
+    res.json({ ok: true });
+  } catch(e) {
+    console.error(e);
+    res.status(401).json({ error: 'Ошибка авторизации' });
+  }
+});
+
 const channels = { 'общий': [], 'игры': [], 'фидбек': [] };
-const onlineUsers = new Map(); // ws -> { id, username, color, channel }
+const onlineUsers = new Map(); // ws -> { id, username, color, avatar, channel, voiceChannel }
 const dmHistory = new Map();
 
 // ── ГОЛОСОВЫЕ КАНАЛЫ ──
-// voiceChannels: { channelName: Set<username> }
 const voiceChannels = { 'голос-1': new Set(), 'голос-2': new Set() };
 
 function dmKey(a, b) { return [a, b].sort().join('|'); }
@@ -124,7 +160,8 @@ function sendTo(ws, data) {
 
 function getUserList() {
   return Array.from(onlineUsers.values()).map(u => ({
-    username: u.username, color: u.color, channel: u.channel, voiceChannel: u.voiceChannel || null
+    username: u.username, color: u.color, avatar: u.avatar || null,
+    channel: u.channel, voiceChannel: u.voiceChannel || null
   }));
 }
 
@@ -140,7 +177,7 @@ function getVoiceChannelList() {
   for (const [ch, members] of Object.entries(voiceChannels)) {
     result[ch] = Array.from(members).map(username => {
       const u = Array.from(onlineUsers.values()).find(x => x.username === username);
-      return { username, color: u ? u.color : '#4af0c0' };
+      return { username, color: u ? u.color : '#4af0c0', avatar: u ? u.avatar || null : null };
     });
   }
   return result;
@@ -158,16 +195,27 @@ wss.on('connection', (ws, req) => {
     if (data.type === 'auth') {
       try {
         const user = jwt.verify(data.token, JWT_SECRET);
-        onlineUsers.set(ws, { id: user.id, username: user.username, color: user.color, channel: 'общий', voiceChannel: null });
-        sendTo(ws, {
-          type: 'welcome',
-          username: user.username,
-          color: user.color,
-          history: channels['общий'].slice(-50),
-          voiceChannels: getVoiceChannelList()
+        // Load avatar from DB
+        pool.query('SELECT avatar FROM users WHERE id=$1', [user.id]).then(result => {
+          const avatar = result.rows[0]?.avatar || null;
+          onlineUsers.set(ws, {
+            id: user.id, username: user.username, color: user.color,
+            avatar, channel: 'общий', voiceChannel: null
+          });
+          sendTo(ws, {
+            type: 'welcome',
+            username: user.username,
+            color: user.color,
+            avatar,
+            history: channels['общий'].slice(-50),
+            voiceChannels: getVoiceChannelList()
+          });
+          broadcast({ type: 'user_joined', username: user.username, color: user.color, avatar, users: getUserList() });
+          broadcast({ type: 'system', text: `${user.username} зашёл в сеть`, channel: 'общий' });
+        }).catch(() => {
+          onlineUsers.set(ws, { id: user.id, username: user.username, color: user.color, avatar: null, channel: 'общий', voiceChannel: null });
+          sendTo(ws, { type: 'welcome', username: user.username, color: user.color, avatar: null, history: channels['общий'].slice(-50), voiceChannels: getVoiceChannelList() });
         });
-        broadcast({ type: 'user_joined', username: user.username, color: user.color, users: getUserList() });
-        broadcast({ type: 'system', text: `${user.username} зашёл в сеть`, channel: 'общий' });
       } catch {
         sendTo(ws, { type: 'auth_error', error: 'Неверный токен' });
         ws.close();
@@ -186,6 +234,7 @@ wss.on('connection', (ws, req) => {
           id: Date.now() + Math.random(),
           username: user.username,
           color: user.color,
+          avatar: user.avatar || null,
           text: data.text,
           channel: ch,
           time: new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })
@@ -205,6 +254,7 @@ wss.on('connection', (ws, req) => {
           id: Date.now() + Math.random(),
           from: user.username,
           fromColor: user.color,
+          fromAvatar: user.avatar || null,
           to: data.to,
           text: data.text,
           time: new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })
@@ -259,7 +309,6 @@ wss.on('connection', (ws, req) => {
         break;
       }
 
-      // ── CALL SIGNALING — relay between two users ──
       case 'call_invite':
       case 'call_accept':
       case 'call_decline':
@@ -267,15 +316,12 @@ wss.on('connection', (ws, req) => {
       case 'call_widget': {
         const targetWs = findWsByUsername(data.to);
         if (targetWs) {
-          sendTo(targetWs, { ...data, from: user.username, fromColor: user.color });
+          sendTo(targetWs, { ...data, from: user.username, fromColor: user.color, fromAvatar: user.avatar || null });
         }
         break;
       }
 
-      // ── ГОЛОСОВЫЕ КАНАЛЫ — WebRTC сигналинг ──
-
       case 'voice_join': {
-        // Выйти из текущего голосового канала если есть
         if (user.voiceChannel && voiceChannels[user.voiceChannel]) {
           voiceChannels[user.voiceChannel].delete(user.username);
         }
@@ -284,13 +330,11 @@ wss.on('connection', (ws, req) => {
         user.voiceChannel = vch;
         voiceChannels[vch].add(user.username);
 
-        // Сообщить всем участникам голосового канала что новый юзер зашёл
-        // Они должны создать peer connection и отправить offer
         const existingMembers = Array.from(voiceChannels[vch]).filter(u => u !== user.username);
         existingMembers.forEach(memberName => {
           const memberWs = findWsByUsername(memberName);
           if (memberWs) {
-            sendTo(memberWs, { type: 'voice_peer_joined', username: user.username, color: user.color, channel: vch });
+            sendTo(memberWs, { type: 'voice_peer_joined', username: user.username, color: user.color, avatar: user.avatar || null, channel: vch });
           }
         });
 
@@ -301,7 +345,7 @@ wss.on('connection', (ws, req) => {
             .filter(u => u !== user.username)
             .map(u => {
               const ud = Array.from(onlineUsers.values()).find(x => x.username === u);
-              return { username: u, color: ud ? ud.color : '#4af0c0' };
+              return { username: u, color: ud ? ud.color : '#4af0c0', avatar: ud ? ud.avatar || null : null };
             })
         });
 
@@ -313,7 +357,6 @@ wss.on('connection', (ws, req) => {
       case 'voice_leave': {
         if (user.voiceChannel && voiceChannels[user.voiceChannel]) {
           voiceChannels[user.voiceChannel].delete(user.username);
-          // Сообщить оставшимся
           voiceChannels[user.voiceChannel].forEach(memberName => {
             const memberWs = findWsByUsername(memberName);
             if (memberWs) sendTo(memberWs, { type: 'voice_peer_left', username: user.username });
@@ -325,7 +368,6 @@ wss.on('connection', (ws, req) => {
         break;
       }
 
-      // WebRTC сигналинг — пересылка между пирами
       case 'voice_offer':
       case 'voice_answer':
       case 'voice_ice': {
@@ -341,7 +383,6 @@ wss.on('connection', (ws, req) => {
   ws.on('close', () => {
     const user = onlineUsers.get(ws);
     if (user) {
-      // Покинуть голосовой канал
       if (user.voiceChannel && voiceChannels[user.voiceChannel]) {
         voiceChannels[user.voiceChannel].delete(user.username);
         voiceChannels[user.voiceChannel].forEach(memberName => {

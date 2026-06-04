@@ -840,6 +840,22 @@ body{
 .widget-join-btn:hover    { transform: scale(1.08) }
 .login-switch-link:hover  { transform: scale(1.1) }
 .lang-btn:hover           { transform: scale(1.08) }
+
+/* ── AVATAR IMAGE SUPPORT ── */
+.av-img {
+  width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;
+}
+#avatar-preview:hover {
+  border-color:var(--accent);
+  box-shadow:var(--accent-glow);
+  transform:scale(1.08);
+}
+
+/* ── MSG AVATAR IMAGE ── */
+.msg-av { overflow: hidden; flex-shrink: 0; }
+.msg-av img, .f-av img, .friend-card-av img, .sub-av-img {
+  width:100%; height:100%; object-fit:cover; border-radius:50%; display:block;
+}
 </style>
 </head>
 <body>
@@ -1156,6 +1172,20 @@ body{
             <button class="lang-btn active" onclick="saveDisplayName()">Save</button>
           </div>
         </div>
+        <div style="margin-bottom:18px;padding-bottom:18px;border-bottom:1px solid var(--border)">
+            <div class="field-label">Avatar</div>
+            <div style="display:flex;align-items:center;gap:14px;margin-top:8px">
+              <div id="avatar-preview" onclick="document.getElementById('avatar-upload-input').click()" style="width:52px;height:52px;border-radius:50%;border:2px solid var(--accent-border);cursor:pointer;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;background:#0a0d10;color:var(--accent);transition:all 0.2s cubic-bezier(0.34,1.56,0.64,1);flex-shrink:0">??</div>
+              <div>
+                <button class="lang-btn active" onclick="document.getElementById('avatar-upload-input').click()" style="margin-bottom:6px">Upload image</button>
+                <div style="font-size:10px;color:var(--text3)">JPG, PNG, GIF · max 2MB</div>
+                <div id="avatar-remove-wrap" style="display:none;margin-top:4px">
+                  <span onclick="removeAvatar()" style="font-size:10px;color:#f04466;cursor:pointer;letter-spacing:0.04em">✕ Remove avatar</span>
+                </div>
+              </div>
+            </div>
+            <input type="file" id="avatar-upload-input" accept="image/*" style="display:none" onchange="handleAvatarUpload(this)"/>
+          </div>
         <div class="setting-row">
           <div>
             <div class="setting-label">Your tag</div>
@@ -1249,6 +1279,7 @@ const t = i18n.en;
 // ── STATE ──
 let ws = null;
 let me = { name:'', color:'', channel:'general' };
+const avatarCache = new Map(); // username -> avatar data URL or null
 
 // ── NAVIGATION MODE: 'dm' (GRID logo) or 'server' (server icon) ──
 let navMode = 'server'; // default shows server channels
@@ -1357,6 +1388,7 @@ async function doAuth() {
 }
 
 window.addEventListener('load', () => {
+  loadAvatar();
   const token = localStorage.getItem('grid_token');
   const username = localStorage.getItem('grid_username');
   const color = localStorage.getItem('grid_color');
@@ -1441,9 +1473,17 @@ function handleMsg(data) {
       break;
     }
 
-    case 'user_joined':
+    case 'avatar_update': {
+        avatarCache.set(data.username, data.avatar || null);
+        // refresh own avatar display if it's us
+        if (data.username === me.name) { loadAvatar(); }
+        break;
+      }
+      case 'user_joined':
+        if (data.avatar !== undefined) avatarCache.set(data.username, data.avatar);
     case 'user_left':
     case 'users':
+        if (data.users) data.users.forEach(u => { if (u.avatar !== undefined) avatarCache.set(u.username, u.avatar); });
       updateUserList(data.users || []);
       break;
 
@@ -1961,6 +2001,18 @@ function toggleSound() {
 }
 
 // ── RENDER MESSAGES ──
+
+function avHtml(username, color, avatarUrl, size) {
+  // size class applied to parent, this just returns inner content
+  const av = avatarUrl || avatarCache.get(username) || null;
+  if (av) return `<img src="${av}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:block">`;
+  return (username||'?')[0].toUpperCase();
+}
+function avStyle(color, avatarUrl, username) {
+  const av = avatarUrl || avatarCache.get(username) || null;
+  return av ? 'background:#0a0d10;padding:0' : `background:${colorToBg(color)};color:${color}`;
+}
+
 function renderMsg(data, isHistory) {
   const msgs = document.getElementById('messages');
   const isCompact = lastMsgAuthor === data.username;
@@ -2345,7 +2397,106 @@ function renderTyping() {
 }
 
 // ── PROFILE ──
+
+// ── AVATAR ──
+function loadAvatar() {
+  const av = localStorage.getItem('grid_avatar');
+  const initials = me.name ? me.name.slice(0,2).toUpperCase() : '??';
+
+  // dock avatar
+  const dockEl = document.getElementById('my-avatar-btn');
+  if (dockEl) {
+    if (av) {
+      dockEl.innerHTML = `<img class="av-img" src="${av}">`;
+      dockEl.style.padding = '0';
+    } else {
+      dockEl.textContent = initials;
+      dockEl.style.padding = '';
+    }
+  }
+  // profile panel avatar
+  const profEl = document.getElementById('profile-av');
+  if (profEl) {
+    if (av) {
+      profEl.innerHTML = `<img class="av-img" src="${av}">`;
+      profEl.style.padding = '0';
+    } else {
+      profEl.textContent = initials;
+      profEl.style.padding = '';
+    }
+  }
+  // settings preview
+  const prevEl = document.getElementById('avatar-preview');
+  if (prevEl) {
+    if (av) {
+      prevEl.innerHTML = `<img class="av-img" src="${av}">`;
+      prevEl.style.padding = '0';
+      const rm = document.getElementById('avatar-remove-wrap');
+      if (rm) rm.style.display = 'block';
+    } else {
+      prevEl.textContent = initials;
+      prevEl.style.padding = '';
+      const rm = document.getElementById('avatar-remove-wrap');
+      if (rm) rm.style.display = 'none';
+    }
+  }
+}
+
+function handleAvatarUpload(input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (file.size > 2 * 1024 * 1024) { showNotif('Image too large (max 2MB)'); return; }
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    // Resize to max 256x256 via canvas
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const size = Math.min(img.width, img.height);
+      canvas.width = 128; canvas.height = 128;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img,
+        (img.width - size) / 2, (img.height - size) / 2, size, size,
+        0, 0, 128, 128
+      );
+      const data = canvas.toDataURL('image/jpeg', 0.85);
+      localStorage.setItem('grid_avatar', data);
+      avatarCache.set(me.name, data);
+      loadAvatar();
+      // Save to server so others see it
+      const token = localStorage.getItem('grid_token');
+      if (token) {
+        fetch('/api/avatar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({ avatar: data })
+        }).catch(() => {});
+      }
+      showNotif('Avatar updated');
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+  input.value = '';
+}
+
+function removeAvatar() {
+  localStorage.removeItem('grid_avatar');
+  avatarCache.set(me.name, null);
+  loadAvatar();
+  const token = localStorage.getItem('grid_token');
+  if (token) {
+    fetch('/api/avatar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ avatar: null })
+    }).catch(() => {});
+  }
+  showNotif('Avatar removed');
+}
+
 function updateMyProfile() {
+  loadAvatar();
   const initials = me.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
   ['my-avatar-btn','profile-av'].forEach(id => {
     const el = document.getElementById(id);
