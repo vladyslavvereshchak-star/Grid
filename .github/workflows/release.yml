@@ -28,4 +28,19 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EP_DRAFT: false
+          EP_PRE_RELEASE: false
         run: npx electron-builder --win --x64 --publish always
+
+      - name: Publish draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $release = gh release view $tag --json isDraft,id 2>$null | ConvertFrom-Json
+          if ($release.isDraft -eq $true) {
+            gh release edit $tag --draft=false
+            Write-Host "Release $tag published!"
+          } else {
+            Write-Host "Release $tag is already published."
+          }
+        shell: pwsh
