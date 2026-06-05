@@ -1906,6 +1906,13 @@ function handleMsg(data) {
       scrollBottom();
       document.getElementById('modal-conn-status').textContent = 'connected';
       renderChannelList();
+      // Load friends from server
+      if (data.friends && data.friends.length) {
+        data.friends.forEach(f => {
+          friends[f.username] = { name: f.username, username: f.username, color: f.color, avatar: f.avatar || null, online: false };
+        });
+        renderFriendsPanel(); renderDmList();
+      }
       // Switch to server mode by default
       setNavMode('server');
       // Set chat header to current channel
@@ -3032,6 +3039,7 @@ function declineFriend() {
 }
 
 function removeFriend(tag) {
+  if (ws&&ws.readyState===1) ws.send(JSON.stringify({ type:'friend_remove', toUsername: tag }));
   delete friends[tag]; renderFriendsPanel(); renderDmList();
   if (dmMode&&dmWith&&dmWith.tag===tag) {
     dmMode=false; dmWith=null;
@@ -3379,31 +3387,11 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// ── UI ZOOM ──
+// ── UI ZOOM (html zoom — масштабирует всё равномерно) ──
 function applyUIZoom(pct) {
   const v = Math.min(200, Math.max(80, parseInt(pct)));
   localStorage.setItem('grid_ui_zoom', v);
-  const scale = v / 100;
-  const app = document.getElementById('app');
-  if (app) {
-    if (scale === 1) {
-      app.style.transform = '';
-      app.style.transformOrigin = '';
-      app.style.width = '';
-      app.style.height = '';
-      app.style.position = '';
-    } else {
-      app.style.transformOrigin = 'top left';
-      app.style.transform = `scale(${scale})`;
-      app.style.width  = (100 / scale) + 'vw';
-      app.style.height = (100 / scale) + 'vh';
-      app.style.position = 'absolute';
-      app.style.top = '0';
-      app.style.left = '0';
-    }
-  }
-  // Сбрасываем html zoom если остался
-  document.documentElement.style.zoom = '';
+  document.documentElement.style.zoom = (v / 100).toString();
   const slider = document.getElementById('ui-zoom-slider');
   if (slider) { slider.value = v; updateSliderTrack(slider); }
   const disp = document.getElementById('zoom-val-display');
@@ -3412,6 +3400,9 @@ function applyUIZoom(pct) {
 // Восстанавливаем масштаб при загрузке
 (function() {
   const saved = localStorage.getItem('grid_ui_zoom');
+  // Сброс старого transform:scale если остался
+  const app = document.getElementById('app');
+  if (app) { app.style.transform = ''; app.style.width = ''; app.style.height = ''; }
   if (saved) applyUIZoom(parseInt(saved));
 })();
 
