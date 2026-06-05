@@ -177,7 +177,8 @@ body.electron .app{height:calc(100vh - 32px)}
   width:30px;height:30px;border-radius:6px;display:flex;align-items:center;
   justify-content:center;font-size:10px;font-weight:700;
   border:1.5px solid var(--accent-border);cursor:pointer;
-  transition:all 0.2s cubic-bezier(0.34,1.56,0.64,1);flex-shrink:0;margin-top:6px
+  transition:all 0.2s cubic-bezier(0.34,1.56,0.64,1);flex-shrink:0;margin-top:6px;
+  overflow:hidden;
 }
 .dock-my-av:hover{border-color:var(--accent);box-shadow:var(--accent-glow);transform:scale(1.15)}
 
@@ -255,6 +256,7 @@ body.electron .app{height:calc(100vh - 32px)}
   width:30px;height:30px;border-radius:4px;
   display:flex;align-items:center;justify-content:center;
   font-size:11px;font-weight:700;flex-shrink:0;position:relative;
+  overflow:hidden;
 }
 .dm-av::after{
   content:'';position:absolute;bottom:-2px;right:-2px;
@@ -430,7 +432,8 @@ body.electron .app{height:calc(100vh - 32px)}
 .profile-av{
   width:40px;height:40px;border-radius:8px;display:flex;align-items:center;
   justify-content:center;font-size:14px;font-weight:700;
-  border:2.5px solid #0f1011;box-shadow:0 0 0 1.5px var(--border2)
+  border:2.5px solid #0f1011;box-shadow:0 0 0 1.5px var(--border2);
+  overflow:hidden;
 }
 .profile-body{padding:24px 14px 10px;border-bottom:1px solid var(--border);flex-shrink:0}
 .profile-name{font-size:13px;font-weight:700;color:var(--text);letter-spacing:0.02em;margin-bottom:2px}
@@ -452,7 +455,8 @@ body.electron .app{height:calc(100vh - 32px)}
 .friend-card:hover{background:rgba(255,255,255,0.03)}
 .friend-card-av{
   width:22px;height:22px;border-radius:4px;display:flex;align-items:center;
-  justify-content:center;font-size:8px;font-weight:700;flex-shrink:0
+  justify-content:center;font-size:8px;font-weight:700;flex-shrink:0;
+  overflow:hidden;
 }
 .friend-card-name{font-size:10px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .friend-card-status{font-size:9px;color:var(--text3)}
@@ -473,7 +477,8 @@ body.electron .app{height:calc(100vh - 32px)}
 /* user item shared styles */
 .f-av{
   width:24px;height:24px;border-radius:5px;display:flex;align-items:center;
-  justify-content:center;font-size:9px;font-weight:700;flex-shrink:0;position:relative
+  justify-content:center;font-size:9px;font-weight:700;flex-shrink:0;position:relative;
+  overflow:hidden;
 }
 .f-av::after{
   content:'';position:absolute;bottom:-1px;right:-1px;
@@ -1022,7 +1027,7 @@ input[type=range].ctx-slider::-webkit-slider-runnable-track{
 
 /* ── AVATAR IMAGE SUPPORT ── */
 .av-img {
-  width:100%;height:100%;object-fit:cover;border-radius:6px;display:block;
+  width:100%;height:100%;object-fit:cover;border-radius:0;display:block;
 }
 #avatar-preview:hover {
   border-color:var(--accent);
@@ -1033,7 +1038,7 @@ input[type=range].ctx-slider::-webkit-slider-runnable-track{
 /* ── MSG AVATAR IMAGE ── */
 .msg-av { overflow: hidden; flex-shrink: 0; }
 .msg-av img, .f-av img, .friend-card-av img, .sub-av-img {
-  width:100%; height:100%; object-fit:cover; border-radius:6px; display:block;
+  width:100%; height:100%; object-fit:cover; border-radius:0; display:block;
 }
 .tb-btn{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:5px;cursor:pointer;color:#2a3540;font-size:11px;transition:all .15s}.tb-btn:hover{background:rgba(255,255,255,.06);color:#5a7080}.tb-close:hover{background:rgba(255,68,102,.15)!important;color:#ff4466!important}body.electron{padding-top:32px}
 </style>
@@ -3374,24 +3379,11 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// ── UI ZOOM (scale transform) ──
+// ── UI ZOOM (html zoom — масштабирует всё равномерно) ──
 function applyUIZoom(pct) {
   const v = Math.min(200, Math.max(80, parseInt(pct)));
   localStorage.setItem('grid_ui_zoom', v);
-  const scale = v / 100;
-  const app = document.getElementById('app');
-  if (app) {
-    if (scale === 1) {
-      app.style.transform = '';
-      app.style.width = '';
-      app.style.height = '';
-    } else {
-      app.style.transform = `scale(${scale})`;
-      app.style.transformOrigin = '0 0';
-      app.style.width  = (100 / scale) + 'vw';
-      app.style.height = (100 / scale) + 'vh';
-    }
-  }
+  document.documentElement.style.zoom = (v / 100).toString();
   const slider = document.getElementById('ui-zoom-slider');
   if (slider) { slider.value = v; updateSliderTrack(slider); }
   const disp = document.getElementById('zoom-val-display');
@@ -3400,6 +3392,9 @@ function applyUIZoom(pct) {
 // Восстанавливаем масштаб при загрузке
 (function() {
   const saved = localStorage.getItem('grid_ui_zoom');
+  // Сброс старого transform:scale если остался
+  const app = document.getElementById('app');
+  if (app) { app.style.transform = ''; app.style.width = ''; app.style.height = ''; }
   if (saved) applyUIZoom(parseInt(saved));
 })();
 
