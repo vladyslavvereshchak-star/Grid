@@ -9,6 +9,7 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
+  --ui-zoom: 1;
   --bg:   #0c0d0e;
   --bg2:  #0f1011;
   --bg3:  #0b0c0d;
@@ -103,7 +104,7 @@ body{
 /* ══════════════════════════════════
    APP SHELL
 ══════════════════════════════════ */
-.app{display:flex;width:100vw;height:100vh;background:var(--bg2);opacity:0;transition:opacity 0.4s}
+.app{display:flex;width:100vw;height:100vh;background:var(--bg2);opacity:0;transition:opacity 0.4s;zoom:var(--ui-zoom)}
 body.electron .app{height:calc(100vh - 32px)}
 .app.visible{opacity:1}
 
@@ -356,8 +357,8 @@ body.electron .app{height:calc(100vh - 32px)}
   display:flex;flex-direction:column;gap:0;
   transition:opacity 0.3s ease
 }
-.chat-messages.call-dimmed{opacity:0.3;pointer-events:none}
-.chat-messages.call-dimmed-soft{opacity:0.75;pointer-events:none}
+.chat-messages.call-dimmed{opacity:1;pointer-events:all}
+.chat-messages.call-dimmed-soft{opacity:1;pointer-events:all}
 
 .msg-day-sep{
   font-size:9px;color:var(--text3);text-align:center;
@@ -495,51 +496,61 @@ body.electron .app{height:calc(100vh - 32px)}
 /* ══════════════════════════════════
    CALL MODAL — новый двойной интерфейс
 ══════════════════════════════════ */
+/* Call overlay — компактный floating bar, не перекрывает чат */
 #call-overlay{
-  position:fixed;inset:0;background:rgba(0,0,0,0);
+  position:fixed;
+  bottom:68px;left:50%;transform:translateX(-50%) translateY(20px);
+  background:transparent;
   display:none;align-items:center;justify-content:center;
   z-index:250;flex-direction:column;gap:0;
-  transition:background 0.4s ease;
+  transition:transform 0.35s var(--ease),opacity 0.3s ease;
+  opacity:0;pointer-events:none;
 }
-#call-overlay.active{display:flex;background:rgba(0,0,0,0.72)}
+#call-overlay.active{
+  display:flex;
+  transform:translateX(-50%) translateY(0);
+  opacity:1;pointer-events:all;
+}
 
 .call-card{
-  background:linear-gradient(180deg,#141518 0%,#0f1011 100%);
-  border:1px solid rgba(255,255,255,0.07);border-radius:16px;
-  padding:44px 52px 36px;
-  display:flex;flex-direction:column;align-items:center;gap:18px;
-  box-shadow:0 40px 100px rgba(0,0,0,0.9),0 0 0 0.5px rgba(255,255,255,0.04);
-  transform:translateY(20px);opacity:0;
-  transition:transform 0.4s var(--ease),opacity 0.4s ease;
+  background:linear-gradient(180deg,#181a1e 0%,#111316 100%);
+  border:1px solid rgba(0,229,255,0.18);border-radius:14px;
+  padding:14px 22px;
+  display:flex;flex-direction:row;align-items:center;gap:16px;
+  box-shadow:0 8px 32px rgba(0,0,0,0.85), 0 0 0 0.5px rgba(0,229,255,0.06), 0 0 24px rgba(0,229,255,0.06);
   position:relative;z-index:1;
+  min-width:340px;
 }
-#call-overlay.active .call-card{transform:translateY(0);opacity:1}
 
-/* ── DUAL PARTICIPANT CARDS ── */
+/* ── DUAL PARTICIPANT CARDS — compact discord-style ── */
 .call-participants{
-  display:flex;gap:20px;align-items:flex-start;
-  padding:24px 32px 20px;
+  display:flex;gap:10px;align-items:center;
   position:relative;z-index:1;
 }
 
 .call-participant-card{
-  display:flex;flex-direction:column;align-items:center;gap:10px;
-  width:140px;cursor:pointer;
-  transition:transform 0.15s;
+  display:flex;flex-direction:row;align-items:center;gap:8px;
+  cursor:pointer;
+  transition:transform 0.15s, background 0.15s;
   position:relative;
   user-select:none;
+  padding:5px 8px;border-radius:8px;
 }
-.call-participant-card:hover{transform:scale(1.03)}
+.call-participant-card:hover{
+  background:rgba(255,255,255,0.04);
+  transform:scale(1.02);
+}
 
 .call-participant-avatar-wrap{
-  position:relative;width:100px;height:100px;
+  position:relative;width:36px;height:36px;
   display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;
 }
 
 .call-participant-avatar{
-  width:90px;height:90px;border-radius:14px;
+  width:34px;height:34px;border-radius:8px;
   display:flex;align-items:center;justify-content:center;
-  font-size:32px;font-weight:700;
+  font-size:13px;font-weight:700;
   border:2px solid rgba(255,255,255,0.08);
   position:relative;z-index:2;flex-shrink:0;
   transition:border-color 0.2s,box-shadow 0.2s;
@@ -557,60 +568,69 @@ body.electron .app{height:calc(100vh - 32px)}
   pointer-events:none;z-index:1;
 }
 .call-participant-avatar-wrap.speaking .call-participant-speaking-ring{
-  border-color:rgba(0,229,255,0.5);
-  box-shadow:0 0 18px rgba(0,229,255,0.2);
-  animation:speakPulse 0.8s ease-in-out infinite alternate;
+  animation:speakWave1 1.3s ease-out infinite;
 }
-@keyframes speakPulse{
-  0%{box-shadow:0 0 8px rgba(0,229,255,0.15)}
-  100%{box-shadow:0 0 28px rgba(0,229,255,0.45)}
+.call-participant-avatar-wrap.speaking .call-participant-speaking-ring::after{
+  content:'';position:absolute;inset:0;border-radius:10px;
+  border:2px solid rgba(0,229,255,0);
+  animation:speakWave2 1.3s ease-out 0.5s infinite;
+}
+@keyframes speakWave1{
+  0%   {inset:0px;border-color:rgba(0,229,255,0.6);opacity:1}
+  100% {inset:-8px;border-color:rgba(0,229,255,0);opacity:0}
+}
+@keyframes speakWave2{
+  0%   {inset:0px;border-color:rgba(0,229,255,0.35);opacity:1}
+  100% {inset:-13px;border-color:rgba(0,229,255,0);opacity:0}
 }
 
+.call-participant-info{display:flex;flex-direction:column;gap:1px}
 .call-participant-name{
-  font-size:12px;font-weight:700;color:var(--text);
-  letter-spacing:0.04em;text-align:center;
+  font-size:11px;font-weight:700;color:var(--text);
+  letter-spacing:0.03em;white-space:nowrap;
 }
 .call-participant-status{
-  font-size:9px;color:var(--text3);letter-spacing:0.08em;
-  text-transform:uppercase;text-align:center;margin-top:-4px;
+  font-size:9px;color:var(--text3);letter-spacing:0.06em;
+  text-transform:uppercase;
 }
 .call-participant-status.speaking{color:var(--accent);opacity:0.9}
 
 .call-participant-divider{
-  width:1px;background:rgba(255,255,255,0.06);
-  margin-top:45px;height:60px;flex-shrink:0;
+  width:1px;background:rgba(255,255,255,0.07);
+  height:28px;flex-shrink:0;margin:0 2px;
 }
 
-/* ── WAITING STATE (одиночная карточка) ── */
-.call-ripple-wrap{position:relative;width:100px;height:100px;display:flex;align-items:center;justify-content:center}
+/* ── WAITING STATE — компактный горизонтальный ── */
+.call-ripple-wrap{position:relative;width:36px;height:36px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .ripple{
   position:absolute;border-radius:50%;
   border:1.5px solid rgba(0,229,255,0.5);
   animation:rippleOut 2.4s ease-out infinite;
   pointer-events:none;
 }
-.ripple:nth-child(1){width:80px;height:80px;animation-delay:0s}
-.ripple:nth-child(2){width:80px;height:80px;animation-delay:0.6s}
-.ripple:nth-child(3){width:80px;height:80px;animation-delay:1.2s}
-.ripple:nth-child(4){width:80px;height:80px;animation-delay:1.8s}
+.ripple:nth-child(1){width:30px;height:30px;animation-delay:0s}
+.ripple:nth-child(2){width:30px;height:30px;animation-delay:0.7s}
+.ripple:nth-child(3){width:30px;height:30px;animation-delay:1.4s}
+.ripple:nth-child(4){width:30px;height:30px;animation-delay:2.1s}
 @keyframes rippleOut{
   0%{transform:scale(1);opacity:0.7;border-color:rgba(0,229,255,0.5)}
-  80%{transform:scale(2.4);opacity:0;border-color:rgba(0,229,255,0)}
-  100%{transform:scale(2.4);opacity:0}
+  80%{transform:scale(2.8);opacity:0;border-color:rgba(0,229,255,0)}
+  100%{transform:scale(2.8);opacity:0}
 }
 
 .call-avatar{
-  width:72px;height:72px;border-radius:12px;
+  width:32px;height:32px;border-radius:7px;
   display:flex;align-items:center;justify-content:center;
-  font-size:26px;font-weight:700;
+  font-size:13px;font-weight:700;
   border:2px solid rgba(0,229,255,0.2);
-  box-shadow:0 0 30px rgba(0,229,255,0.12);
+  box-shadow:0 0 12px rgba(0,229,255,0.12);
   position:relative;z-index:2;flex-shrink:0;
 }
 
-.call-label{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:0.12em}
-.call-name{font-size:16px;font-weight:700;color:var(--text);letter-spacing:0.04em}
-.call-state{font-size:10px;color:var(--accent);letter-spacing:0.08em;opacity:0.8;animation:callBlink 1.5s infinite}
+.call-waiting-info{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
+.call-label{font-size:8px;color:var(--text3);text-transform:uppercase;letter-spacing:0.12em}
+.call-name{font-size:13px;font-weight:700;color:var(--text);letter-spacing:0.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.call-state{font-size:9px;color:var(--accent);letter-spacing:0.06em;opacity:0.8;animation:callBlink 1.5s infinite}
 @keyframes callBlink{0%,100%{opacity:0.8}50%{opacity:0.3}}
 
 /* ── CONTEXT MENU ── */
@@ -1282,9 +1302,8 @@ input[type=range].ctx-slider::-webkit-slider-runnable-track{
 
 <!-- OUTGOING CALL OVERLAY (caller sees this) -->
 <div id="call-overlay">
-  <!-- WAITING STATE — показывается пока не подключились -->
+  <!-- WAITING STATE — компактный горизонтальный бар -->
   <div class="call-card" id="call-waiting-card">
-    <div class="call-label" id="call-direction-label">OUTGOING CALL</div>
     <div class="call-ripple-wrap">
       <div class="ripple"></div>
       <div class="ripple"></div>
@@ -1292,16 +1311,22 @@ input[type=range].ctx-slider::-webkit-slider-runnable-track{
       <div class="ripple"></div>
       <div class="call-avatar" id="call-avatar" style="background:#0a0d10;color:#00E5FF">?</div>
     </div>
-    <div class="call-name" id="call-contact-name">—</div>
-    <div class="call-state" id="call-state-label">Searching frequency...</div>
-    <div id="call-solo-hint" style="display:none;font-size:10px;color:var(--text3);letter-spacing:0.06em;text-align:center;margin-top:-8px">
-      Channel is open · Waiting for connection
+    <div class="call-waiting-info">
+      <div class="call-label" id="call-direction-label">OUTGOING CALL</div>
+      <div class="call-name" id="call-contact-name">—</div>
+      <div class="call-state" id="call-state-label">Searching frequency...</div>
+    </div>
+    <div id="call-solo-hint" style="display:none;font-size:9px;color:var(--text3);letter-spacing:0.05em;white-space:nowrap;opacity:0.7">
+      Channel open
     </div>
   </div>
 
-  <!-- CONNECTED STATE — двойные карточки участников -->
-  <div id="call-connected-card" style="display:none;flex-direction:column;align-items:center;gap:16px">
-    <div style="font-size:9px;color:rgba(0,229,255,0.4);letter-spacing:0.14em;text-transform:uppercase">CONNECTED · SECURE CHANNEL</div>
+  <!-- CONNECTED STATE — компактный горизонтальный бар -->
+  <div id="call-connected-card" style="display:none;flex-direction:row;align-items:center;gap:12px;width:100%">
+    <!-- Лейбл "connected" -->
+    <div style="font-size:8px;color:rgba(0,229,255,0.5);letter-spacing:0.1em;text-transform:uppercase;white-space:nowrap;flex-shrink:0">
+      <span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--accent);box-shadow:0 0 6px rgba(0,229,255,0.8);margin-right:4px;vertical-align:middle"></span>CALL
+    </div>
     <div class="call-participants">
       <!-- Карточка: я -->
       <div class="call-participant-card" id="call-card-me" onclick="showCallCtxMenu(event,'me')">
@@ -1309,8 +1334,10 @@ input[type=range].ctx-slider::-webkit-slider-runnable-track{
           <div class="call-participant-speaking-ring"></div>
           <div class="call-participant-avatar" id="call-av-me" style="background:#0a0d10;color:#00E5FF">?</div>
         </div>
-        <div class="call-participant-name" id="call-name-me">—</div>
-        <div class="call-participant-status" id="call-status-me">you</div>
+        <div class="call-participant-info">
+          <div class="call-participant-name" id="call-name-me">—</div>
+          <div class="call-participant-status" id="call-status-me">you</div>
+        </div>
       </div>
 
       <div class="call-participant-divider"></div>
@@ -1321,11 +1348,12 @@ input[type=range].ctx-slider::-webkit-slider-runnable-track{
           <div class="call-participant-speaking-ring"></div>
           <div class="call-participant-avatar" id="call-av-peer" style="background:#0a0d10;color:#00E5FF">?</div>
         </div>
-        <div class="call-participant-name" id="call-name-peer">—</div>
-        <div class="call-participant-status" id="call-status-peer">connected</div>
+        <div class="call-participant-info">
+          <div class="call-participant-name" id="call-name-peer">—</div>
+          <div class="call-participant-status" id="call-status-peer">connected</div>
+        </div>
       </div>
     </div>
-    <div style="font-size:10px;color:var(--text3);letter-spacing:0.06em">Click a card for options</div>
   </div>
 </div>
 
@@ -1449,6 +1477,22 @@ input[type=range].ctx-slider::-webkit-slider-runnable-track{
           <div>
             <div class="setting-label">Your tag</div>
             <div style="font-size:10px;color:var(--text3);margin-top:2px" id="setting-tag-display">—</div>
+          </div>
+        </div>
+        <div style="margin-top:18px;padding-top:18px;border-top:1px solid var(--border)">
+          <div class="modal-section-title" style="margin-bottom:12px">Interface Scale</div>
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">
+            <span style="font-size:10px;color:var(--text3);min-width:24px;text-align:right" id="zoom-val-display">100%</span>
+            <input type="range" class="ctx-slider" id="ui-zoom-slider" min="80" max="200" value="100" step="5"
+              style="flex:1" oninput="applyUIZoom(this.value)">
+            <span style="font-size:10px;color:var(--text3);min-width:24px">200%</span>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="lang-btn" onclick="applyUIZoom(80)" style="font-size:9px;padding:3px 8px">80%</button>
+            <button class="lang-btn active" onclick="applyUIZoom(100)" style="font-size:9px;padding:3px 8px">100%</button>
+            <button class="lang-btn" onclick="applyUIZoom(125)" style="font-size:9px;padding:3px 8px">125%</button>
+            <button class="lang-btn" onclick="applyUIZoom(150)" style="font-size:9px;padding:3px 8px">150%</button>
+            <button class="lang-btn" onclick="applyUIZoom(200)" style="font-size:9px;padding:3px 8px">200%</button>
           </div>
         </div>
         <div style="margin-top:18px;padding-top:18px;border-top:1px solid var(--border)">
@@ -2250,22 +2294,16 @@ function setCallCard(overlayId, name, color, label, state) {
 
 function showCallOverlay(id, show) {
   const el = document.getElementById(id);
-  const msgs = document.getElementById('messages');
   if (show) {
     el.style.display = 'flex';
     void el.offsetWidth;
     el.classList.add('active');
     if (id === 'call-overlay') {
-      msgs.classList.remove('call-dimmed-soft');
-      msgs.classList.add('call-dimmed');
       document.getElementById('call-controls').classList.add('active');
     }
-    // incoming-call-overlay is now a floating popup — no dimming needed
   } else {
     el.classList.remove('active');
     if (id === 'call-overlay') {
-      msgs.classList.remove('call-dimmed');
-      msgs.classList.remove('call-dimmed-soft');
       document.getElementById('call-controls').classList.remove('active');
     }
     setTimeout(() => { el.style.display = 'none'; }, 400);
@@ -3194,7 +3232,15 @@ function updateMyProfile() {
 }
 
 // ── MODAL ──
-function openModal() { document.getElementById('modal-overlay').classList.add('open') }
+function openModal() {
+  document.getElementById('modal-overlay').classList.add('open');
+  // Sync zoom slider with current value
+  const saved = parseInt(localStorage.getItem('grid_ui_zoom') || '100');
+  const slider = document.getElementById('ui-zoom-slider');
+  if (slider) { slider.max = 200; slider.value = saved; updateSliderTrack(slider); }
+  const disp = document.getElementById('zoom-val-display');
+  if (disp) disp.textContent = saved + '%';
+}
 function closeModal() { document.getElementById('modal-overlay').classList.remove('open'); stopMicTest(); }
 function switchTab(id, el) {
   document.querySelectorAll('.modal-tab').forEach(t=>t.classList.remove('active'));
@@ -3350,6 +3396,22 @@ document.addEventListener('keydown', (e) => {
     }, 500);
   }
 });
+
+// ── UI ZOOM ──
+function applyUIZoom(pct) {
+  const v = Math.min(200, Math.max(80, parseInt(pct)));
+  document.documentElement.style.setProperty('--ui-zoom', v / 100);
+  localStorage.setItem('grid_ui_zoom', v);
+  const slider = document.getElementById('ui-zoom-slider');
+  if (slider) { slider.value = v; updateSliderTrack(slider); }
+  const disp = document.getElementById('zoom-val-display');
+  if (disp) disp.textContent = v + '%';
+}
+// Восстанавливаем масштаб при загрузке
+(function() {
+  const saved = localStorage.getItem('grid_ui_zoom');
+  if (saved) applyUIZoom(parseInt(saved));
+})();
 
 document.getElementById('username-input').focus();
 
