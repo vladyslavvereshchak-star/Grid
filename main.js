@@ -109,6 +109,7 @@ function injectTitlebar() {
           <circle cx="11" cy="11" r="2.5" fill="#00E5FF"/>
         </svg>
         <span style="font-size:10px;color:#2a3540;letter-spacing:0.1em;font-family:JetBrains Mono,monospace">GRID</span>
+        <span style="font-size:9px;color:#1a2530;letter-spacing:0.08em;font-family:JetBrains Mono,monospace">v${app.getVersion()}</span>
         <span id="__update_badge" style="display:none;font-size:9px;color:#00E5FF;background:rgba(0,229,255,0.1);border:1px solid rgba(0,229,255,0.2);padding:1px 6px;border-radius:4px;letter-spacing:0.06em"></span>
       \`;
 
