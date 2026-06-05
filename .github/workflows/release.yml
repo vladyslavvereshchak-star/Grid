@@ -16,6 +16,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set version from tag
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          (Get-Content package.json) -replace '"version": "[^"]*"', "`"version`": `"$version`"" | Set-Content package.json
+          Write-Host "Version set to $version"
+        shell: pwsh
+
       - name: Create GitHub Release
         uses: actions/create-release@v1
         env:
@@ -25,11 +37,6 @@ jobs:
           release_name: GRID ${{ github.ref_name }}
           draft: false
           prerelease: false
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
 
       - name: Install dependencies
         run: npm install
