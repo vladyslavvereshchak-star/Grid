@@ -192,34 +192,41 @@ function broadcastVoiceState() {
 }
 
 wss.on('connection', (ws, req) => {
-  ws.on('message', (raw) => {
+  ws.on('message', async (raw) => {
     let data;
     try { data = JSON.parse(raw); } catch { return; }
 
     if (data.type === 'auth') {
       try {
         const user = jwt.verify(data.token, JWT_SECRET);
-        pool.query('SELECT avatar FROM users WHERE id=$1', [user.id]).then(result => {
-          const avatar = result.rows[0]?.avatar || null;
-          onlineUsers.set(ws, {
-            id: user.id, username: user.username, color: user.color,
-            avatar, channel: 'общий', voiceChannel: null
-          });
-          sendTo(ws, {
-            type: 'welcome',
-            username: user.username,
-            color: user.color,
-            avatar,
-            history: channels['общий'].slice(-50),
-            voiceChannels: getVoiceChannelList()
-          });
-          broadcast({ type: 'user_joined', username: user.username, color: user.color, avatar, users: getUserList() });
-          broadcast({ type: 'system', text: `${user.username} зашёл в сеть`, channel: 'общий' });
-        }).catch(() => {
-          onlineUsers.set(ws, { id: user.id, username: user.username, color: user.color, avatar: null, channel: 'общий', voiceChannel: null });
-          sendTo(ws, { type: 'welcome', username: user.username, color: user.color, avatar: null, history: channels['общий'].slice(-50), voiceChannels: getVoiceChannelList() });
+        const result = await pool.query('SELECT avatar FROM users WHERE id=$1', [user.id]);
+        const avatar = result.rows[0]?.avatar || null;
+        onlineUsers.set(ws, {
+          id: user.id, username: user.username, color: user.color,
+          avatar, channel: 'общий', voiceChannel: null
         });
-      } catch {
+        // Load friends from DB
+        const friendsResult = await pool.query(`
+          SELECT u.username, u.color, u.avatar FROM users u
+          JOIN friends f ON (f.user1_id = u.id OR f.user2_id = u.id)
+          WHERE (f.user1_id = $1 OR f.user2_id = $1) AND u.id != $1
+        `, [user.id]);
+        const friendsList = friendsResult.rows.map(f => ({
+          username: f.username, color: f.color, avatar: f.avatar || null
+        }));
+        sendTo(ws, {
+          type: 'welcome',
+          username: user.username,
+          color: user.color,
+          avatar,
+          friends: friendsList,
+          history: channels['общий'].slice(-50),
+          voiceChannels: getVoiceChannelList()
+        });
+        broadcast({ type: 'user_joined', username: user.username, color: user.color, avatar, users: getUserList() });
+        broadcast({ type: 'system', text: `${user.username} зашёл в сеть`, channel: 'общий' });
+      } catch(e) {
+        console.error('auth error', e);
         sendTo(ws, { type: 'auth_error', error: 'Неверный токен' });
         ws.close();
       }
@@ -309,6 +316,32 @@ wss.on('connection', (ws, req) => {
         if (requesterWs) {
           sendTo(requesterWs, { type: 'friend_accepted', username: user.username, color: user.color });
         }
+        // Save friendship to DB
+        try {
+          const r1 = await pool.query('SELECT id FROM users WHERE username=$1', [user.username]);
+          const r2 = await pool.query('SELECT id FROM users WHERE username=$1', [data.toUsername]);
+          if (r1.rows[0] && r2.rows[0]) {
+            const id1 = Math.min(r1.rows[0].id, r2.rows[0].id);
+            const id2 = Math.max(r1.rows[0].id, r2.rows[0].id);
+            await pool.query(
+              'INSERT INTO friends (user1_id, user2_id) VALUES ($1,$2) ON CONFLICT DO NOTHING',
+              [id1, id2]
+            );
+          }
+        } catch(e) { console.error('friend save error', e); }
+        break;
+      }
+
+      case 'friend_remove': {
+        try {
+          const r1 = await pool.query('SELECT id FROM users WHERE username=$1', [user.username]);
+          const r2 = await pool.query('SELECT id FROM users WHERE username=$1', [data.toUsername]);
+          if (r1.rows[0] && r2.rows[0]) {
+            const id1 = Math.min(r1.rows[0].id, r2.rows[0].id);
+            const id2 = Math.max(r1.rows[0].id, r2.rows[0].id);
+            await pool.query('DELETE FROM friends WHERE user1_id=$1 AND user2_id=$2', [id1, id2]);
+          }
+        } catch(e) { console.error('friend remove error', e); }
         break;
       }
 
