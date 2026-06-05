@@ -1465,11 +1465,11 @@ input[type=range].ctx-slider::-webkit-slider-runnable-track{
             <span style="font-size:10px;color:var(--text3);min-width:28px">200%</span>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
-            <button class="lang-btn" onclick="applyUIZoom(80)"  style="font-size:9px;padding:3px 9px">80%</button>
-            <button class="lang-btn active" onclick="applyUIZoom(100)" style="font-size:9px;padding:3px 9px">100%</button>
-            <button class="lang-btn" onclick="applyUIZoom(125)" style="font-size:9px;padding:3px 9px">125%</button>
-            <button class="lang-btn" onclick="applyUIZoom(150)" style="font-size:9px;padding:3px 9px">150%</button>
-            <button class="lang-btn" onclick="applyUIZoom(200)" style="font-size:9px;padding:3px 9px">200%</button>
+            <button class="lang-btn zoom-preset-btn" data-zoom="80" onclick="applyUIZoom(80)" style="font-size:9px;padding:3px 9px">80%</button>
+            <button class="lang-btn zoom-preset-btn" data-zoom="100" onclick="applyUIZoom(100)" style="font-size:9px;padding:3px 9px">100%</button>
+            <button class="lang-btn zoom-preset-btn" data-zoom="125" onclick="applyUIZoom(125)" style="font-size:9px;padding:3px 9px">125%</button>
+            <button class="lang-btn zoom-preset-btn" data-zoom="150" onclick="applyUIZoom(150)" style="font-size:9px;padding:3px 9px">150%</button>
+            <button class="lang-btn zoom-preset-btn" data-zoom="200" onclick="applyUIZoom(200)" style="font-size:9px;padding:3px 9px">200%</button>
           </div>
         </div>
         <div style="margin-top:18px;padding-top:18px;border-top:1px solid var(--border)">
@@ -1901,6 +1901,11 @@ function handleMsg(data) {
   switch(data.type) {
     case 'welcome':
       me.color = data.color;
+      // Restore avatar from server if localStorage is empty
+      if (data.avatar && !localStorage.getItem('grid_avatar')) {
+        localStorage.setItem('grid_avatar', data.avatar);
+        avatarCache.set(me.name, data.avatar);
+      }
       updateMyProfile();
       document.getElementById('messages').innerHTML = '';
       addDaySep();
@@ -1961,8 +1966,15 @@ function handleMsg(data) {
 
     case 'avatar_update': {
         avatarCache.set(data.username, data.avatar || null);
-        // refresh own avatar display if it's us
-        if (data.username === me.name) { loadAvatar(); }
+        // If it's our own avatar coming back from server — sync localStorage too
+        if (data.username === me.name) {
+          if (data.avatar) {
+            localStorage.setItem('grid_avatar', data.avatar);
+          } else {
+            localStorage.removeItem('grid_avatar');
+          }
+          loadAvatar();
+        }
         break;
       }
       case 'user_joined':
@@ -3208,20 +3220,29 @@ function removeAvatar() {
 }
 
 function updateMyProfile() {
-  loadAvatar();
   const initials = me.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+  const av = localStorage.getItem('grid_avatar');
+  // Only set color/initials on elements that don't have an avatar image
   ['my-avatar-btn','profile-av'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
-    el.textContent = initials;
-    el.style.color = me.color;
-    el.style.background = colorToBg(me.color);
+    // Don't overwrite if avatar is already shown as an image
+    if (!av) {
+      el.textContent = initials;
+      el.style.color = me.color;
+      el.style.background = colorToBg(me.color);
+    } else {
+      el.style.color = me.color;
+      el.style.background = colorToBg(me.color);
+    }
     if (id==='my-avatar-btn') el.style.borderColor = me.color;
   });
   document.getElementById('profile-name').textContent = me.name;
   document.getElementById('profile-tag').textContent = me.name;
   document.getElementById('setting-name').value = me.name;
   document.getElementById('setting-tag-display').textContent = me.name;
+  // Always call loadAvatar last so it wins over initials
+  loadAvatar();
 }
 
 // ── MODAL ──
@@ -3232,6 +3253,9 @@ function openModal() {
   if (slider) { slider.value = saved; updateSliderTrack(slider); }
   const disp = document.getElementById('zoom-val-display');
   if (disp) disp.textContent = saved + '%';
+  document.querySelectorAll('.zoom-preset-btn').forEach(function(btn){
+    btn.classList.toggle('active', parseInt(btn.dataset.zoom) === saved);
+  });
 }
 function closeModal() { document.getElementById('modal-overlay').classList.remove('open'); stopMicTest(); }
 function switchTab(id, el) {
@@ -3419,6 +3443,10 @@ function applyUIZoom(pct) {
   if (slider) { slider.value = v; updateSliderTrack(slider); }
   const disp = document.getElementById('zoom-val-display');
   if (disp) disp.textContent = v + '%';
+  // Sync preset buttons active state
+  document.querySelectorAll(".zoom-preset-btn").forEach(function(btn){
+    btn.classList.toggle("active", parseInt(btn.dataset.zoom) === v);
+  });
 }
 // Восстанавливаем масштаб при загрузке
 (function() {
