@@ -22,21 +22,10 @@ jobs:
           node-version: 20
 
       - name: Set version from tag
+        shell: pwsh
         run: |
           $version = "${{ github.ref_name }}".TrimStart('v')
           (Get-Content package.json) -replace '"version": "[^"]*"', "`"version`": `"$version`"" | Set-Content package.json
-          Write-Host "Version set to $version"
-        shell: pwsh
-
-      - name: Create GitHub Release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref_name }}
-          release_name: GRID ${{ github.ref_name }}
-          draft: false
-          prerelease: false
 
       - name: Install dependencies
         run: npm install
@@ -44,4 +33,4 @@ jobs:
       - name: Build & Publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx electron-builder --win --x64 --publish always
+        run: npx electron-builder --win --x64 --publish onTagOrDraft
