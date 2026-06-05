@@ -3417,28 +3417,36 @@ document.addEventListener('keydown', (e) => {
 function applyUIZoom(pct) {
   const v = Math.min(200, Math.max(80, parseInt(pct)));
   localStorage.setItem('grid_ui_zoom', v);
-
-  // Используем CSS zoom на #app — самый чистый способ,
-  // не ломает position/transform и уважает тайтлбар Electron
+  const scale = v / 100;
   const appEl = document.getElementById('app');
   if (appEl) {
-    // Сбрасываем старый transform-based зум если был
-    appEl.style.transform = '';
-    appEl.style.transformOrigin = '';
-    appEl.style.position = '';
-    appEl.style.top = '';
-    appEl.style.left = '';
-    appEl.style.width = '';
-    appEl.style.height = '';
-    // Применяем zoom
-    appEl.style.zoom = v + '%';
+    // Сбрасываем zoom если был
+    appEl.style.zoom = '';
+    if (scale === 1) {
+      appEl.style.transform = '';
+      appEl.style.transformOrigin = '';
+      appEl.style.position = '';
+      appEl.style.top = '';
+      appEl.style.left = '';
+      appEl.style.width = '';
+      appEl.style.height = '';
+    } else {
+      // Учитываем тайтлбар Electron (32px) и любой padding-top на body
+      const tbH = (document.body.classList.contains('electron') ? 32 : 0);
+      appEl.style.position = 'absolute';
+      appEl.style.top = tbH + 'px';
+      appEl.style.left = '0';
+      appEl.style.transformOrigin = 'top left';
+      appEl.style.transform = 'scale(' + scale + ')';
+      appEl.style.width  = (100 / scale) + 'vw';
+      // Высота — вычитаем тайтлбар из доступной области
+      appEl.style.height = 'calc(' + (100 / scale) + 'vh - ' + (tbH / scale) + 'px)';
+    }
   }
-
   const slider = document.getElementById('ui-zoom-slider');
   if (slider) { slider.value = v; updateSliderTrack(slider); }
   const disp = document.getElementById('zoom-val-display');
   if (disp) disp.textContent = v + '%';
-  // Sync preset buttons active state
   document.querySelectorAll('.zoom-preset-btn').forEach(function(btn) {
     btn.classList.toggle('active', parseInt(btn.dataset.zoom) === v);
   });
