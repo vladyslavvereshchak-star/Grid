@@ -1,20 +1,50 @@
 {
-  "name": "grid-server",
+  "name": "grid-desktop",
   "version": "1.0.0",
-  "main": "server.js",
+  "description": "GRID — Secure Messenger",
+  "main": "main.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "electron .",
+    "build": "electron-builder --win --x64",
+    "build-portable": "electron-builder --win portable --x64"
   },
   "dependencies": {
-    "bcryptjs": "^2.4.3",
-    "dotenv": "^16.6.1",
-    "express": "^5.2.1",
-    "jsonwebtoken": "^9.0.2",
-    "pg": "^8.13.3",
-    "ws": "^8.21.0"
+    "electron-updater": "^6.1.7"
   },
   "devDependencies": {
     "electron": "^32.0.0",
-    "electron-builder": "^26.8.1"
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.grid.messenger",
+    "productName": "GRID",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "public/**/*",
+      "node_modules/**/*"
+    ],
+    "publish": {
+      "provider": "github",
+      "owner": "vladylavvereshchak-star",
+      "repo": "Grid"
+    },
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "icon": "public/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "GRID"
+    }
   }
 }
