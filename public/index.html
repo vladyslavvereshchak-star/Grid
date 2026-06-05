@@ -28,9 +28,9 @@
   --voice:#c084fc;
   --voice-dim:#c084fc18;
   --voice-border:#c084fc30;
-  --r:6px;
-  --dock-w:64px;
-  --sub-w:240px;
+  --r:8px;
+  --dock-w:76px;
+  --sub-w:260px;
   --ease:cubic-bezier(0.16,1,0.3,1);
 }
 
@@ -104,6 +104,7 @@ body{
    APP SHELL
 ══════════════════════════════════ */
 .app{display:flex;width:100vw;height:100vh;background:var(--bg2);opacity:0;transition:opacity 0.4s}
+body.electron .app{height:calc(100vh - 32px)}
 .app.visible{opacity:1}
 
 /* ══════════════════════════════════
