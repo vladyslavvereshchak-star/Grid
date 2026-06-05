@@ -1873,17 +1873,20 @@ window.addEventListener('load', () => {
 });
 
 // ── WEBSOCKET ──
+let _reconnectAttempts = 0;
+let _reconnectTimer = null;
+
 function connect(token) {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}`);
   ws.onopen = () => {
+    _reconnectAttempts = 0; // сбрасываем счётчик при успехе
     setConnBadge('online');
     ws.send(JSON.stringify({ type:'auth', token }));
     document.getElementById('server-ip-display').textContent = location.host;
   };
   ws.onclose = () => {
     setConnBadge('offline');
-    // Если был активный звонок — завершаем UI (peer уже не получит call_end через WS)
     if (callActive || callSolo) {
       callActive = false; callSolo = false; callPeer = null;
       closeCallWebRTC();
@@ -1891,10 +1894,17 @@ function connect(token) {
       endCallUI();
     }
     const t2 = localStorage.getItem('grid_token');
-    if (t2) setTimeout(() => connect(t2), 3000);
+    if (!t2) return;
+    // Exponential backoff: 3s → 6s → 12s → 24s → 30s (макс)
+    _reconnectAttempts++;
+    const delay = Math.min(3000 * Math.pow(2, _reconnectAttempts - 1), 30000);
+    clearTimeout(_reconnectTimer);
+    _reconnectTimer = setTimeout(() => connect(t2), delay);
   };
   ws.onerror = () => setConnBadge('offline');
-  ws.onmessage = (e) => handleMsg(JSON.parse(e.data));
+  ws.onmessage = (e) => {
+    try { handleMsg(JSON.parse(e.data)); } catch(err) { console.error('WS parse error', err); }
+  };
 }
 
 function handleMsg(data) {
@@ -1934,7 +1944,10 @@ function handleMsg(data) {
         msgCount++;
         document.getElementById('stat-msgs').textContent = msgCount;
       }
-      if (data.username !== me.name) showNotif(`${data.username}: ${data.text.slice(0,40)}`);
+      if (data.username !== me.name) {
+        showNotif(`${data.username}: ${data.text.slice(0,40)}`);
+        updateTabTitle();
+      }
       break;
     }
 
@@ -1946,6 +1959,7 @@ function handleMsg(data) {
       } else if (!isFromMe) {
         dmUnread[otherTag] = (dmUnread[otherTag]||0)+1;
         renderDmList();
+        updateTabTitle();
         showNotif(`${data.from}: ${data.text.slice(0,40)}`, 'blue');
       }
       break;
@@ -1991,6 +2005,18 @@ function handleMsg(data) {
       data.history.forEach(m => renderMsg(m, true));
       scrollBottom();
       break;
+
+    case 'delete_message': {
+      // Удаляем сообщение у всех кто его видит
+      const msgEl = document.querySelector(`.msg[data-msg-id="${data.msgId}"]`);
+      if (msgEl) {
+        msgEl.style.transition = 'opacity 0.2s, transform 0.2s';
+        msgEl.style.opacity = '0';
+        msgEl.style.transform = 'translateX(-10px)';
+        setTimeout(() => msgEl.remove(), 200);
+      }
+      break;
+    }
 
     case 'typing': {
       const typChId = CH_SERVER_REVERSE[data.channel] || data.channel;
@@ -2815,8 +2841,20 @@ function renderMsg(data, isHistory) {
 
 function deleteMsg(btn) {
   const msgEl = btn.closest('.msg');
-  msgEl.style.cssText += 'opacity:0;transform:translateX(-10px)';
+  const msgId = msgEl.dataset.msgId;
+  // Анимация удаления
+  msgEl.style.transition = 'opacity 0.2s, transform 0.2s';
+  msgEl.style.opacity = '0';
+  msgEl.style.transform = 'translateX(-10px)';
   setTimeout(() => msgEl.remove(), 200);
+  // Отправляем на сервер чтобы удалить у всех
+  if (msgId) {
+    if (dmMode && dmWith) {
+      wsSend({ type: 'delete_message', msgId, dm: true, withUsername: dmWith.username });
+    } else {
+      wsSend({ type: 'delete_message', msgId, channel: me.channel });
+    }
+  }
 }
 
 function renderDmMsg(data, isOwn) {
@@ -3025,7 +3063,7 @@ function openDm(tag) {
   document.getElementById('input-row').classList.add('dm-mode');
   document.getElementById('call-btn').style.display = 'flex';
   updateSendBtn();
-  dmUnread[tag]=0; renderDmList();
+  dmUnread[tag]=0; renderDmList(); updateTabTitle();
   if (ws&&ws.readyState===1) ws.send(JSON.stringify({ type:'dm_history', withUsername:tag }));
 }
 
@@ -3365,6 +3403,8 @@ function setConnBadge(state) {
 }
 
 let notifTimer=null;
+let _unreadTotal = 0;
+
 function showNotif(text, type) {
   const el = document.getElementById('notif');
   const dot = document.getElementById('notif-dot');
@@ -3373,6 +3413,24 @@ function showNotif(text, type) {
   el.classList.add('show'); clearTimeout(notifTimer);
   notifTimer = setTimeout(()=>el.classList.remove('show'), 2800);
 }
+
+// Обновляем заголовок вкладки/окна при непрочитанных сообщениях
+function updateTabTitle() {
+  // Считаем все непрочитанные DM
+  const dmUnreadTotal = Object.values(dmUnread).reduce((a,b) => a+b, 0);
+  // Считаем непрочитанные каналы
+  const chUnreadTotal = Object.values(unread).reduce((a,b) => a+b, 0);
+  _unreadTotal = dmUnreadTotal + chUnreadTotal;
+  document.title = _unreadTotal > 0 ? `(${_unreadTotal}) GRID` : 'GRID';
+}
+
+// Сбрасываем счётчик когда окно получает фокус
+window.addEventListener('focus', () => {
+  // Сбрасываем непрочитанные для текущего открытого чата
+  if (dmMode && dmWith) { dmUnread[dmWith.tag] = 0; }
+  else if (me.channel) { unread[me.channel] = 0; }
+  updateTabTitle();
+});
 
 function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }
 

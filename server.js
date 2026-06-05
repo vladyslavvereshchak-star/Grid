@@ -293,6 +293,16 @@ wss.on('connection', (ws, req) => {
         break;
       }
 
+      case 'delete_message': {
+        // Удаляем из истории канала если есть
+        if (data.channel && channels[data.channel]) {
+          channels[data.channel] = channels[data.channel].filter(m => String(m.id) !== String(data.msgId));
+        }
+        // Рассылаем всем чтобы удалили у себя
+        broadcast({ type: 'delete_message', msgId: data.msgId });
+        break;
+      }
+
       case 'typing': {
         if (data.dm) {
           const recipientWs = findWsByUsername(data.to);
