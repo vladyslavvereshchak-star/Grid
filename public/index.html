@@ -2916,6 +2916,7 @@ function renderDmMsg(data, isOwn) {
   lastMsgAuthor = name;
   const div = document.createElement('div');
   div.className = 'msg'+(isCompact?' compact':'');
+  div.dataset.msgId = data.id || '';
   div.innerHTML = `
     <div class="msg-av" style="background:${colorToBg(color)};color:${color}">${name[0].toUpperCase()}</div>
     <div class="msg-body">
@@ -2924,6 +2925,10 @@ function renderDmMsg(data, isOwn) {
         <span class="msg-time">${data.time}</span>
       </div>`:''}
       <div class="msg-text${isOwn?' own':''}">${esc(data.text)}</div>
+    </div>
+    <div class="msg-actions">
+      ${isOwn?`<button class="msg-action-btn" title="Edit" onclick="editMsg(this)"><i class="ti ti-pencil"></i></button>`:''}
+      <button class="msg-action-btn del" title="Delete" onclick="deleteMsg(this)"><i class="ti ti-trash"></i></button>
     </div>`;
   msgs.appendChild(div);
 }
