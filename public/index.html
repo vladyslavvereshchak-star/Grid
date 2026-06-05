@@ -2428,30 +2428,75 @@ function toggleCallSound() {
 //  WebRTC для DM звонков
 // ══════════════════════════════
 
-// Патчим SDP чтобы отключить DTX и FEC — они дают нарастающий эффект на динамических микрофонах
+// Патч SDP для Discord-уровня качества:
+// - 128kbps битрейт (Discord использует именно столько)
+// - DTX=0: не резать поток в паузах (убирает нарастающий писк)
+// - FEC=1: защита от потерь пакетов
+// - stereo=1: объёмный звук
 function patchOpusSDP(sdp) {
-  // Находим payload type для opus
   const opusMatch = sdp.match(/a=rtpmap:(\d+) opus/i);
   if (!opusMatch) return sdp;
   const pt = opusMatch[1];
 
-  return sdp.split('\r\n').map(line => {
-    // Патчим только fmtp строку для opus
+  const lines = sdp.split('\r\n');
+  let hasFmtp = false;
+
+  const patched = lines.map(line => {
     if (line.startsWith(`a=fmtp:${pt} `)) {
-      // Убираем DTX — главная причина "волн" (браузер режет поток в паузах)
-      line = line.replace(/usedtx=\d/, '').replace(/;+$/, '');
-      line += ';usedtx=0';
-      // CBR — постоянный битрейт, нет скачков
-      line = line.replace(/cbr=\d/, '').replace(/;+$/, '');
-      line += ';cbr=1';
-      // Убираем FEC
-      line = line.replace(/useinbandfec=\d/, '').replace(/;+$/, '');
-      line += ';useinbandfec=0';
-      // Максимальный ptime — меньше пакетов, меньше джиттера
-      line += ';maxplaybackrate=48000;sprop-maxcapturerate=48000';
+      hasFmtp = true;
+      // Парсим существующие параметры
+      const prefix = `a=fmtp:${pt} `;
+      const params = {};
+      line.slice(prefix.length).split(';').forEach(p => {
+        const [k, v] = p.trim().split('=');
+        if (k) params[k.trim()] = v !== undefined ? v.trim() : '1';
+      });
+      // Применяем Discord-уровень настройки
+      params['maxaveragebitrate'] = '128000'; // 128kbps
+      params['maxplaybackrate']   = '48000';  // 48kHz
+      params['usedtx']            = '0';      // не резать в паузах
+      params['useinbandfec']      = '1';      // защита от потерь
+      params['stereo']            = '1';      // стерео
+      params['sprop-stereo']      = '1';
+      // Убираем CBR — пусть Opus адаптируется
+      delete params['cbr'];
+
+      return prefix + Object.entries(params).map(([k,v]) => `${k}=${v}`).join(';');
     }
     return line;
-  }).join('\r\n');
+  });
+
+  // Если fmtp строки не было — добавляем после rtpmap
+  if (!hasFmtp) {
+    const idx = patched.findIndex(l => l.startsWith(`a=rtpmap:${pt} `));
+    if (idx !== -1) {
+      patched.splice(idx + 1, 0,
+        `a=fmtp:${pt} maxaveragebitrate=128000;maxplaybackrate=48000;usedtx=0;useinbandfec=1;stereo=1;sprop-stereo=1`
+      );
+    }
+  }
+
+  return patched.join('\r\n');
+}
+
+// Повышаем битрейт через setParameters после установки соединения
+// (SDP патч задаёт верхнюю границу, setParameters — реальный битрейт)
+async function applyHighBitrate(pc) {
+  if (!pc) return;
+  try {
+    const senders = pc.getSenders();
+    for (const sender of senders) {
+      if (!sender.track || sender.track.kind !== 'audio') continue;
+      const params = sender.getParameters();
+      if (!params.encodings || !params.encodings.length) {
+        params.encodings = [{}];
+      }
+      params.encodings[0].maxBitrate  = 128000; // 128kbps
+      params.encodings[0].priority    = 'high';
+      params.encodings[0].networkPriority = 'high';
+      await sender.setParameters(params);
+    }
+  } catch(e) { /* setParameters может не поддерживаться — не критично */ }
 }
 
 async function startCallWebRTC(peerUsername, isInitiator) {
@@ -2524,6 +2569,8 @@ async function startCallWebRTC(peerUsername, isInitiator) {
   callPc.onconnectionstatechange = () => {
     if (callPc && callPc.connectionState === 'connected') {
       document.getElementById('call-state-label').textContent = 'Connected · Audio live';
+      // Применяем максимальный битрейт после установки соединения
+      applyHighBitrate(callPc);
     }
     if (callPc && (callPc.connectionState === 'failed' || callPc.connectionState === 'disconnected')) {
       document.getElementById('call-state-label').textContent = 'Connection lost';
@@ -2618,6 +2665,7 @@ function handleVoiceJoined(data) { updateVoiceBar(); }
 async function handlePeerJoined(data) {
   const pc = createPeerConnection(data.username);
   const offer = await pc.createOffer();
+  offer.sdp = patchOpusSDP(offer.sdp);
   await pc.setLocalDescription(offer);
   ws.send(JSON.stringify({ type:'voice_offer', to: data.username, sdp: offer }));
 }
@@ -2626,6 +2674,7 @@ async function handleVoiceOffer(data) {
   const pc = createPeerConnection(data.from);
   await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
   const answer = await pc.createAnswer({ offerToReceiveAudio: true });
+  answer.sdp = patchOpusSDP(answer.sdp);
   await pc.setLocalDescription(answer);
   ws.send(JSON.stringify({ type:'voice_answer', to: data.from, sdp: answer }));
 }
@@ -2671,6 +2720,7 @@ function createPeerConnection(username) {
     applySinkId(audio);
   };
   pc.onconnectionstatechange = () => {
+    if (pc.connectionState === 'connected') applyHighBitrate(pc);
     if (pc.connectionState === 'failed' || pc.connectionState === 'closed') closePeer(username);
   };
   return pc;
