@@ -1858,15 +1858,17 @@ async function doAuth() {
 }
 
 window.addEventListener('load', () => {
-  loadAvatar();
   const token = localStorage.getItem('grid_token');
   const username = localStorage.getItem('grid_username');
   const color = localStorage.getItem('grid_color');
   if (token && username) {
     me.name = username; me.color = color || '#00E5FF';
+    loadAvatar();
     document.getElementById('login-screen').classList.add('hidden');
     document.getElementById('app').classList.add('visible');
     connect(token);
+  } else {
+    loadAvatar();
   }
 });
 
@@ -3387,11 +3389,32 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// ── UI ZOOM (html zoom — масштабирует всё равномерно) ──
+// ── UI ZOOM ──
 function applyUIZoom(pct) {
   const v = Math.min(200, Math.max(80, parseInt(pct)));
   localStorage.setItem('grid_ui_zoom', v);
-  document.documentElement.style.zoom = (v / 100).toString();
+  document.documentElement.style.zoom = '';
+  const scale = v / 100;
+  const app = document.getElementById('app');
+  if (app) {
+    if (scale === 1) {
+      app.style.transform = '';
+      app.style.transformOrigin = '';
+      app.style.width = '';
+      app.style.height = '';
+      app.style.position = '';
+      app.style.top = '';
+      app.style.left = '';
+    } else {
+      app.style.position = 'absolute';
+      app.style.top = '0';
+      app.style.left = '0';
+      app.style.transformOrigin = 'top left';
+      app.style.transform = `scale(${scale})`;
+      app.style.width  = (100 / scale) + 'vw';
+      app.style.height = (100 / scale) + 'vh';
+    }
+  }
   const slider = document.getElementById('ui-zoom-slider');
   if (slider) { slider.value = v; updateSliderTrack(slider); }
   const disp = document.getElementById('zoom-val-display');
@@ -3399,10 +3422,8 @@ function applyUIZoom(pct) {
 }
 // Восстанавливаем масштаб при загрузке
 (function() {
+  document.documentElement.style.zoom = '';
   const saved = localStorage.getItem('grid_ui_zoom');
-  // Сброс старого transform:scale если остался
-  const app = document.getElementById('app');
-  if (app) { app.style.transform = ''; app.style.width = ''; app.style.height = ''; }
   if (saved) applyUIZoom(parseInt(saved));
 })();
 
