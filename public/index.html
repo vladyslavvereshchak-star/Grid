@@ -493,7 +493,7 @@ body.electron .app{height:calc(100vh - 32px)}
 .u-btn.is-friend:hover{color:var(--red);border-color:#3a1a1a;background:#1a0a10}
 
 /* ══════════════════════════════════
-   CALL MODAL
+   CALL MODAL — новый двойной интерфейс
 ══════════════════════════════════ */
 #call-overlay{
   position:fixed;inset:0;background:rgba(0,0,0,0);
@@ -501,7 +501,7 @@ body.electron .app{height:calc(100vh - 32px)}
   z-index:250;flex-direction:column;gap:0;
   transition:background 0.4s ease;
 }
-#call-overlay.active{display:flex;background:rgba(0,0,0,0.55)}
+#call-overlay.active{display:flex;background:rgba(0,0,0,0.72)}
 
 .call-card{
   background:linear-gradient(180deg,#141518 0%,#0f1011 100%);
@@ -515,8 +515,74 @@ body.electron .app{height:calc(100vh - 32px)}
 }
 #call-overlay.active .call-card{transform:translateY(0);opacity:1}
 
-.call-ripple-wrap{position:relative;width:100px;height:100px;display:flex;align-items:center;justify-content:center}
+/* ── DUAL PARTICIPANT CARDS ── */
+.call-participants{
+  display:flex;gap:20px;align-items:flex-start;
+  padding:24px 32px 20px;
+  position:relative;z-index:1;
+}
 
+.call-participant-card{
+  display:flex;flex-direction:column;align-items:center;gap:10px;
+  width:140px;cursor:pointer;
+  transition:transform 0.15s;
+  position:relative;
+  user-select:none;
+}
+.call-participant-card:hover{transform:scale(1.03)}
+
+.call-participant-avatar-wrap{
+  position:relative;width:100px;height:100px;
+  display:flex;align-items:center;justify-content:center;
+}
+
+.call-participant-avatar{
+  width:90px;height:90px;border-radius:14px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:32px;font-weight:700;
+  border:2px solid rgba(255,255,255,0.08);
+  position:relative;z-index:2;flex-shrink:0;
+  transition:border-color 0.2s,box-shadow 0.2s;
+}
+
+/* Speaking ring — появляется когда говорит */
+.call-participant-avatar-wrap.speaking .call-participant-avatar{
+  border-color:var(--accent);
+  box-shadow:0 0 0 3px rgba(0,229,255,0.25), 0 0 24px rgba(0,229,255,0.3);
+}
+.call-participant-speaking-ring{
+  position:absolute;inset:-6px;border-radius:20px;
+  border:2px solid rgba(0,229,255,0);
+  transition:border-color 0.15s,box-shadow 0.15s;
+  pointer-events:none;z-index:1;
+}
+.call-participant-avatar-wrap.speaking .call-participant-speaking-ring{
+  border-color:rgba(0,229,255,0.5);
+  box-shadow:0 0 18px rgba(0,229,255,0.2);
+  animation:speakPulse 0.8s ease-in-out infinite alternate;
+}
+@keyframes speakPulse{
+  0%{box-shadow:0 0 8px rgba(0,229,255,0.15)}
+  100%{box-shadow:0 0 28px rgba(0,229,255,0.45)}
+}
+
+.call-participant-name{
+  font-size:12px;font-weight:700;color:var(--text);
+  letter-spacing:0.04em;text-align:center;
+}
+.call-participant-status{
+  font-size:9px;color:var(--text3);letter-spacing:0.08em;
+  text-transform:uppercase;text-align:center;margin-top:-4px;
+}
+.call-participant-status.speaking{color:var(--accent);opacity:0.9}
+
+.call-participant-divider{
+  width:1px;background:rgba(255,255,255,0.06);
+  margin-top:45px;height:60px;flex-shrink:0;
+}
+
+/* ── WAITING STATE (одиночная карточка) ── */
+.call-ripple-wrap{position:relative;width:100px;height:100px;display:flex;align-items:center;justify-content:center}
 .ripple{
   position:absolute;border-radius:50%;
   border:1.5px solid rgba(0,229,255,0.5);
@@ -527,7 +593,6 @@ body.electron .app{height:calc(100vh - 32px)}
 .ripple:nth-child(2){width:80px;height:80px;animation-delay:0.6s}
 .ripple:nth-child(3){width:80px;height:80px;animation-delay:1.2s}
 .ripple:nth-child(4){width:80px;height:80px;animation-delay:1.8s}
-
 @keyframes rippleOut{
   0%{transform:scale(1);opacity:0.7;border-color:rgba(0,229,255,0.5)}
   80%{transform:scale(2.4);opacity:0;border-color:rgba(0,229,255,0)}
@@ -547,6 +612,98 @@ body.electron .app{height:calc(100vh - 32px)}
 .call-name{font-size:16px;font-weight:700;color:var(--text);letter-spacing:0.04em}
 .call-state{font-size:10px;color:var(--accent);letter-spacing:0.08em;opacity:0.8;animation:callBlink 1.5s infinite}
 @keyframes callBlink{0%,100%{opacity:0.8}50%{opacity:0.3}}
+
+/* ── CONTEXT MENU ── */
+#call-ctx-menu{
+  position:fixed;z-index:9999;
+  background:#121315;border:1px solid rgba(255,255,255,0.08);
+  border-radius:8px;padding:6px 0;min-width:200px;
+  box-shadow:0 12px 40px rgba(0,0,0,0.85);
+  font-family:'JetBrains Mono',monospace;
+  display:none;
+}
+#call-ctx-menu.open{display:block}
+
+.ctx-header{
+  padding:8px 14px 4px;
+  font-size:9px;color:rgba(0,229,255,0.5);
+  letter-spacing:0.1em;text-transform:uppercase;
+  border-bottom:1px solid rgba(255,255,255,0.05);
+  margin-bottom:4px;
+}
+
+.ctx-item{
+  display:flex;align-items:center;gap:10px;
+  padding:7px 14px;cursor:pointer;
+  font-size:11px;color:#8a9aaa;
+  transition:background 0.12s,color 0.12s;
+  letter-spacing:0.03em;
+}
+.ctx-item:hover{background:rgba(0,229,255,0.06);color:var(--text)}
+.ctx-item.danger:hover{background:rgba(255,68,102,0.08);color:#ff4466}
+.ctx-item i{font-size:13px;width:16px;text-align:center;flex-shrink:0}
+
+.ctx-volume-wrap{
+  padding:6px 14px 10px;
+  border-bottom:1px solid rgba(255,255,255,0.05);
+  margin-bottom:4px;
+}
+.ctx-volume-label{
+  font-size:9px;color:rgba(0,229,255,0.5);letter-spacing:0.08em;
+  text-transform:uppercase;margin-bottom:6px;display:flex;justify-content:space-between;
+}
+.ctx-volume-val{color:var(--accent)}
+input[type=range].ctx-slider{
+  width:100%;height:4px;-webkit-appearance:none;appearance:none;
+  background:rgba(255,255,255,0.08);border-radius:2px;outline:none;cursor:pointer;
+}
+input[type=range].ctx-slider::-webkit-slider-thumb{
+  -webkit-appearance:none;width:14px;height:14px;border-radius:50%;
+  background:var(--accent);cursor:pointer;
+  box-shadow:0 0 8px rgba(0,229,255,0.6);
+  transition:box-shadow 0.15s;
+}
+input[type=range].ctx-slider::-webkit-slider-thumb:hover{
+  box-shadow:0 0 16px rgba(0,229,255,0.9);
+}
+input[type=range].ctx-slider::-webkit-slider-runnable-track{
+  height:4px;border-radius:2px;
+  background:linear-gradient(to right,var(--accent) var(--pct,50%),rgba(255,255,255,0.08) var(--pct,50%));
+}
+.ctx-sep{height:1px;background:rgba(255,255,255,0.05);margin:4px 0}
+
+/* Profile modal вызываемый из ctx меню */
+#call-profile-modal{
+  position:fixed;inset:0;z-index:10000;
+  background:rgba(0,0,0,0.7);
+  display:none;align-items:center;justify-content:center;
+}
+#call-profile-modal.open{display:flex}
+.call-profile-card{
+  background:#131416;border:1px solid rgba(255,255,255,0.08);
+  border-radius:12px;padding:32px 36px;min-width:260px;
+  display:flex;flex-direction:column;align-items:center;gap:12px;
+  box-shadow:0 24px 80px rgba(0,0,0,0.9);
+  position:relative;
+}
+.call-profile-close{
+  position:absolute;top:12px;right:14px;
+  font-size:14px;color:var(--text3);cursor:pointer;
+  transition:color 0.15s;
+}
+.call-profile-close:hover{color:var(--red)}
+.call-profile-av{
+  width:72px;height:72px;border-radius:12px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:28px;font-weight:700;
+}
+.call-profile-name{font-size:18px;font-weight:700;color:var(--text);letter-spacing:0.04em}
+.call-profile-tag{font-size:11px;color:var(--text3);letter-spacing:0.06em}
+.call-profile-status{
+  font-size:10px;color:var(--accent);letter-spacing:0.08em;
+  background:var(--accent-dim);padding:3px 12px;border-radius:4px;
+  border:1px solid var(--accent-border);
+}
 
 /* Call controls bar */
 #call-controls{
@@ -1125,7 +1282,8 @@ body.electron .app{height:calc(100vh - 32px)}
 
 <!-- OUTGOING CALL OVERLAY (caller sees this) -->
 <div id="call-overlay">
-  <div class="call-card">
+  <!-- WAITING STATE — показывается пока не подключились -->
+  <div class="call-card" id="call-waiting-card">
     <div class="call-label" id="call-direction-label">OUTGOING CALL</div>
     <div class="call-ripple-wrap">
       <div class="ripple"></div>
@@ -1136,10 +1294,77 @@ body.electron .app{height:calc(100vh - 32px)}
     </div>
     <div class="call-name" id="call-contact-name">—</div>
     <div class="call-state" id="call-state-label">Searching frequency...</div>
-    <!-- Solo mode info (when waiting alone after timeout) -->
     <div id="call-solo-hint" style="display:none;font-size:10px;color:var(--text3);letter-spacing:0.06em;text-align:center;margin-top:-8px">
       Channel is open · Waiting for connection
     </div>
+  </div>
+
+  <!-- CONNECTED STATE — двойные карточки участников -->
+  <div id="call-connected-card" style="display:none;flex-direction:column;align-items:center;gap:16px">
+    <div style="font-size:9px;color:rgba(0,229,255,0.4);letter-spacing:0.14em;text-transform:uppercase">CONNECTED · SECURE CHANNEL</div>
+    <div class="call-participants">
+      <!-- Карточка: я -->
+      <div class="call-participant-card" id="call-card-me" onclick="showCallCtxMenu(event,'me')">
+        <div class="call-participant-avatar-wrap" id="call-av-wrap-me">
+          <div class="call-participant-speaking-ring"></div>
+          <div class="call-participant-avatar" id="call-av-me" style="background:#0a0d10;color:#00E5FF">?</div>
+        </div>
+        <div class="call-participant-name" id="call-name-me">—</div>
+        <div class="call-participant-status" id="call-status-me">you</div>
+      </div>
+
+      <div class="call-participant-divider"></div>
+
+      <!-- Карточка: собеседник -->
+      <div class="call-participant-card" id="call-card-peer" onclick="showCallCtxMenu(event,'peer')">
+        <div class="call-participant-avatar-wrap" id="call-av-wrap-peer">
+          <div class="call-participant-speaking-ring"></div>
+          <div class="call-participant-avatar" id="call-av-peer" style="background:#0a0d10;color:#00E5FF">?</div>
+        </div>
+        <div class="call-participant-name" id="call-name-peer">—</div>
+        <div class="call-participant-status" id="call-status-peer">connected</div>
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--text3);letter-spacing:0.06em">Click a card for options</div>
+  </div>
+</div>
+
+<!-- CONTEXT MENU -->
+<div id="call-ctx-menu">
+  <div class="ctx-header" id="ctx-username">USER</div>
+  <div class="ctx-volume-wrap">
+    <div class="ctx-volume-label">
+      <span>[ USER VOLUME ]</span>
+      <span class="ctx-volume-val" id="ctx-vol-val">100%</span>
+    </div>
+    <input type="range" class="ctx-slider" id="ctx-vol-slider" min="0" max="200" value="100"
+      oninput="onCtxVolume(this.value)">
+  </div>
+  <div class="ctx-item" id="ctx-mute-btn" onclick="onCtxMute()">
+    <i class="ti ti-volume-off"></i>
+    <span id="ctx-mute-label">[ MUTE ]</span>
+  </div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item" onclick="onCtxProfile()">
+    <i class="ti ti-user"></i>
+    [ VIEW PROFILE ]
+  </div>
+  <div class="ctx-item danger" onclick="onCtxRemoveFriend()">
+    <i class="ti ti-user-minus"></i>
+    [ REMOVE FRIEND ]
+  </div>
+</div>
+
+<!-- PROFILE MODAL из контекст меню -->
+<div id="call-profile-modal">
+  <div class="call-profile-card">
+    <div class="call-profile-close" onclick="document.getElementById('call-profile-modal').classList.remove('open')">
+      <i class="ti ti-x"></i>
+    </div>
+    <div class="call-profile-av" id="cpm-av" style="background:#0a0d10;color:#00E5FF">?</div>
+    <div class="call-profile-name" id="cpm-name">—</div>
+    <div class="call-profile-tag" id="cpm-tag">—</div>
+    <div class="call-profile-status">● Online · In Call</div>
   </div>
 </div>
 
@@ -3127,6 +3352,301 @@ document.addEventListener('keydown', (e) => {
 });
 
 document.getElementById('username-input').focus();
+
+// ══════════════════════════════════════════════════════
+//  CALL UI v2 — dual participant cards + speaking detection
+// ══════════════════════════════════════════════════════
+
+// Per-peer state
+const callPeerGain   = {};   // username → GainNode
+const callPeerMuted  = {};   // username → bool
+const callPeerVol    = {};   // username → 0-200
+const callPeerAudioCtx = {}; // username → AudioContext
+
+// Speaking detection animation frames
+let speakAnimMe   = null;
+let speakAnimPeer = null;
+
+// Context menu target
+let ctxTarget = null; // 'me' | 'peer'
+
+// ── Show connected dual-card UI ──
+function showConnectedUI() {
+  document.getElementById('call-waiting-card').style.display = 'none';
+  const cc = document.getElementById('call-connected-card');
+  cc.style.display = 'flex';
+
+  // Fill my card
+  const myAv = document.getElementById('call-av-me');
+  myAv.textContent = (me.name||'?')[0].toUpperCase();
+  myAv.style.color = me.color;
+  myAv.style.background = colorToBg(me.color);
+  document.getElementById('call-name-me').textContent = me.name;
+  document.getElementById('call-status-me').textContent = 'you';
+
+  // Fill peer card
+  if (callPeer) {
+    const peerAv = document.getElementById('call-av-peer');
+    peerAv.textContent = (callPeer.username||'?')[0].toUpperCase();
+    peerAv.style.color = callPeer.color || '#00E5FF';
+    peerAv.style.background = colorToBg(callPeer.color || '#00E5FF');
+    document.getElementById('call-name-peer').textContent = callPeer.username;
+  }
+
+  // Start speaking detection
+  startSpeakingDetection();
+}
+
+// ── Hide connected UI, show waiting ──
+function hideConnectedUI() {
+  document.getElementById('call-waiting-card').style.display = '';
+  document.getElementById('call-connected-card').style.display = 'none';
+  stopSpeakingDetection();
+}
+
+// ── Speaking detection via Web Audio API ──
+function startSpeakingDetection() {
+  stopSpeakingDetection();
+
+  // My mic
+  if (callStream) {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = ctx.createMediaStreamSource(callStream);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 512;
+    src.connect(analyser);
+    const buf = new Uint8Array(analyser.frequencyBinCount);
+    let speaking = false;
+    function tick() {
+      speakAnimMe = requestAnimationFrame(tick);
+      analyser.getByteFrequencyData(buf);
+      const avg = buf.slice(0, 60).reduce((a,b)=>a+b,0) / 60;
+      const isSpeaking = avg > 18;
+      if (isSpeaking !== speaking) {
+        speaking = isSpeaking;
+        const wrap = document.getElementById('call-av-wrap-me');
+        const st = document.getElementById('call-status-me');
+        if (wrap) wrap.classList.toggle('speaking', speaking && !callMuted);
+        if (st) { st.textContent = (speaking && !callMuted) ? 'speaking...' : 'you'; st.className = 'call-participant-status' + ((speaking&&!callMuted)?' speaking':''); }
+      }
+    }
+    tick();
+  }
+
+  // Peer audio
+  const peerAudio = document.getElementById('call-remote-audio');
+  if (peerAudio && peerAudio.srcObject) {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const src = ctx.createMediaStreamSource(peerAudio.srcObject);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      src.connect(analyser);
+      const buf = new Uint8Array(analyser.frequencyBinCount);
+      let speaking = false;
+      function tick() {
+        speakAnimPeer = requestAnimationFrame(tick);
+        analyser.getByteFrequencyData(buf);
+        const avg = buf.slice(0, 60).reduce((a,b)=>a+b,0) / 60;
+        const isSpeaking = avg > 12;
+        if (isSpeaking !== speaking) {
+          speaking = isSpeaking;
+          const wrap = document.getElementById('call-av-wrap-peer');
+          const st = document.getElementById('call-status-peer');
+          if (wrap) wrap.classList.toggle('speaking', speaking);
+          if (st) { st.textContent = speaking ? 'speaking...' : 'connected'; st.className = 'call-participant-status' + (speaking?' speaking':''); }
+        }
+      }
+      tick();
+    } catch(e) {}
+  }
+}
+
+function stopSpeakingDetection() {
+  if (speakAnimMe)   { cancelAnimationFrame(speakAnimMe);   speakAnimMe = null; }
+  if (speakAnimPeer) { cancelAnimationFrame(speakAnimPeer); speakAnimPeer = null; }
+  ['call-av-wrap-me','call-av-wrap-peer'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('speaking');
+  });
+}
+
+// ── Context menu ──
+function showCallCtxMenu(e, target) {
+  e.preventDefault();
+  e.stopPropagation();
+  ctxTarget = target;
+
+  const menu = document.getElementById('call-ctx-menu');
+  const name = target === 'me' ? me.name : (callPeer ? callPeer.username : '—');
+  document.getElementById('ctx-username').textContent = name;
+
+  // Volume (only for peer)
+  const volWrap = menu.querySelector('.ctx-volume-wrap');
+  const muteBtn = document.getElementById('ctx-mute-btn');
+  if (target === 'me') {
+    volWrap.style.display = 'none';
+    muteBtn.style.display = 'none';
+  } else {
+    volWrap.style.display = 'block';
+    muteBtn.style.display = 'flex';
+    const vol = callPeerVol[name] ?? 100;
+    const slider = document.getElementById('ctx-vol-slider');
+    slider.value = vol;
+    updateSliderTrack(slider);
+    document.getElementById('ctx-vol-val').textContent = vol + '%';
+    const isMuted = callPeerMuted[name] || false;
+    document.getElementById('ctx-mute-label').textContent = isMuted ? '[ UNMUTE ]' : '[ MUTE ]';
+  }
+
+  // Position
+  const x = Math.min(e.clientX, window.innerWidth - 220);
+  const y = Math.min(e.clientY, window.innerHeight - 260);
+  menu.style.left = x + 'px';
+  menu.style.top  = y + 'px';
+  menu.classList.add('open');
+}
+
+function updateSliderTrack(slider) {
+  const pct = (slider.value / slider.max) * 100;
+  slider.style.setProperty('--pct', pct + '%');
+}
+
+function onCtxVolume(val) {
+  document.getElementById('ctx-vol-val').textContent = val + '%';
+  updateSliderTrack(document.getElementById('ctx-vol-slider'));
+  if (!callPeer) return;
+  const name = callPeer.username;
+  callPeerVol[name] = parseInt(val);
+  // Apply via GainNode
+  applyPeerGain(name, parseInt(val));
+}
+
+function applyPeerGain(username, volumePct) {
+  const audio = document.getElementById('call-remote-audio');
+  if (!audio || !audio.srcObject) return;
+  try {
+    if (!callPeerAudioCtx[username]) {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const src = ctx.createMediaStreamSource(audio.srcObject);
+      const gain = ctx.createGain();
+      src.connect(gain);
+      gain.connect(ctx.destination);
+      callPeerAudioCtx[username] = ctx;
+      callPeerGain[username] = gain;
+      // Mute original audio element to avoid double playback
+      audio.muted = true;
+    }
+    const gain = callPeerGain[username];
+    if (gain) gain.gain.value = volumePct / 100;
+  } catch(e) { console.warn('Gain node error:', e); }
+}
+
+function onCtxMute() {
+  if (!callPeer) return;
+  const name = callPeer.username;
+  callPeerMuted[name] = !callPeerMuted[name];
+  const isMuted = callPeerMuted[name];
+  document.getElementById('ctx-mute-label').textContent = isMuted ? '[ UNMUTE ]' : '[ MUTE ]';
+  // Apply mute via gain
+  if (callPeerGain[name]) {
+    callPeerGain[name].gain.value = isMuted ? 0 : (callPeerVol[name] ?? 100) / 100;
+  } else {
+    const audio = document.getElementById('call-remote-audio');
+    if (audio) audio.muted = isMuted;
+  }
+  closeCtxMenu();
+}
+
+function onCtxProfile() {
+  const target = ctxTarget;
+  const name = target === 'me' ? me.name : (callPeer ? callPeer.username : '—');
+  const color = target === 'me' ? me.color : (callPeer ? callPeer.color : '#00E5FF');
+
+  const av = document.getElementById('cpm-av');
+  av.textContent = (name||'?')[0].toUpperCase();
+  av.style.color = color;
+  av.style.background = colorToBg(color);
+  document.getElementById('cpm-name').textContent = name;
+  document.getElementById('cpm-tag').textContent = '#' + name;
+
+  document.getElementById('call-profile-modal').classList.add('open');
+  closeCtxMenu();
+}
+
+function onCtxRemoveFriend() {
+  if (ctxTarget === 'me') { closeCtxMenu(); return; }
+  if (!callPeer) { closeCtxMenu(); return; }
+  const name = callPeer.username;
+  closeCtxMenu();
+  // End call immediately
+  endCall();
+  // Remove from friends
+  removeFriend(name);
+  showNotif(`${name} removed from contacts`);
+}
+
+function closeCtxMenu() {
+  document.getElementById('call-ctx-menu').classList.remove('open');
+  ctxTarget = null;
+}
+
+// Close context menu on outside click
+document.addEventListener('click', (e) => {
+  const menu = document.getElementById('call-ctx-menu');
+  if (menu && !menu.contains(e.target)) closeCtxMenu();
+});
+document.addEventListener('contextmenu', (e) => {
+  // Only prevent default if inside call overlay
+  const overlay = document.getElementById('call-overlay');
+  if (overlay && overlay.contains(e.target)) e.preventDefault();
+});
+
+// ── Patch handleCallAccepted to show connected UI ──
+const _origHandleCallAccepted = handleCallAccepted;
+window.handleCallAccepted = async function(data) {
+  await _origHandleCallAccepted(data);
+  // Wait a tick for WebRTC to set up
+  setTimeout(showConnectedUI, 300);
+};
+
+// ── Patch acceptIncomingCall to show connected UI ──
+const _origAcceptIncoming = acceptIncomingCall;
+window.acceptIncomingCall = function() {
+  _origAcceptIncoming();
+  setTimeout(showConnectedUI, 300);
+};
+
+// ── Patch endCallUI to hide connected UI ──
+const _origEndCallUI = endCallUI;
+window.endCallUI = function() {
+  _origEndCallUI();
+  hideConnectedUI();
+  // Clean up gain nodes
+  for (const ctx of Object.values(callPeerAudioCtx)) {
+    try { ctx.close(); } catch(e) {}
+  }
+  for (const k in callPeerAudioCtx) delete callPeerAudioCtx[k];
+  for (const k in callPeerGain) delete callPeerGain[k];
+  for (const k in callPeerMuted) delete callPeerMuted[k];
+  for (const k in callPeerVol) delete callPeerVol[k];
+};
+
+// ── Patch startCallWebRTC to start speaking detection on track received ──
+const _origStartCallWebRTC = startCallWebRTC;
+window.startCallWebRTC = async function(peerUsername, isInitiator) {
+  await _origStartCallWebRTC(peerUsername, isInitiator);
+  // Re-attach speaking detection when track arrives
+  const origOnTrack = callPc ? callPc.ontrack : null;
+  if (callPc) {
+    callPc.ontrack = function(e) {
+      if (origOnTrack) origOnTrack.call(this, e);
+      setTimeout(() => {
+        if (callActive) startSpeakingDetection();
+      }, 500);
+    };
+  }
+};
 </script>
 </body>
 </html>
