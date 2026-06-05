@@ -293,6 +293,19 @@ wss.on('connection', (ws, req) => {
         break;
       }
 
+      case 'edit_message': {
+        const ch = data.channel || user.channel;
+        if (channels[ch]) {
+          const m = channels[ch].find(m => String(m.id) === String(data.msgId));
+          if (m && m.username === user.username) {
+            m.text = data.text;
+            m.edited = true;
+          }
+        }
+        broadcast({ type: 'edit_message', msgId: data.msgId, text: data.text });
+        break;
+      }
+
       case 'delete_message': {
         // Удаляем из истории канала если есть
         if (data.channel && channels[data.channel]) {

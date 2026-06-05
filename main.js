@@ -256,6 +256,7 @@ ipcMain.on('notify', (e, { title, body }) => {
 });
 
 // IPC — ручная проверка обновлений
+ipcMain.on('get-version', (e) => { e.returnValue = app.getVersion(); });
 ipcMain.on('check-updates', () => {
   autoUpdater.checkForUpdatesAndNotify();
 });

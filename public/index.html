@@ -1484,6 +1484,10 @@ input[type=range].ctx-slider::-webkit-slider-runnable-track{
             <i class="ti ti-logout"></i> Logout
           </button>
         </div>
+        <div style="margin-top:18px;padding-top:18px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+          <div style="font-size:10px;color:var(--text3);letter-spacing:0.06em">GRID VERSION</div>
+          <div style="font-size:11px;color:var(--accent);letter-spacing:0.08em" id="app-version-display">—</div>
+        </div>
       </div>
       <div class="pane" id="pane-hotkeys">
         <div class="modal-section-title">Hotkeys</div>
@@ -2014,6 +2018,14 @@ function handleMsg(data) {
         msgEl.style.opacity = '0';
         msgEl.style.transform = 'translateX(-10px)';
         setTimeout(() => msgEl.remove(), 200);
+      }
+      break;
+    }
+
+    case 'edit_message': {
+      const editEl = document.querySelector(`.msg[data-msg-id="${data.msgId}"] .msg-text`);
+      if (editEl) {
+        editEl.innerHTML = esc(data.text) + '<span style="font-size:9px;color:var(--text3);margin-left:4px;letter-spacing:0.04em">(edited)</span>';
       }
       break;
     }
@@ -2833,7 +2845,7 @@ function renderMsg(data, isHistory) {
     </div>
     <div class="msg-actions">
       <button class="msg-action-btn" title="Pin"><i class="ti ti-pin"></i></button>
-      ${isOwn?`<button class="msg-action-btn" title="Edit"><i class="ti ti-pencil"></i></button>`:''}
+      ${isOwn?`<button class="msg-action-btn" title="Edit" onclick="editMsg(this)"><i class="ti ti-pencil"></i></button>`:''}
       <button class="msg-action-btn del" title="Delete" onclick="deleteMsg(this)"><i class="ti ti-trash"></i></button>
     </div>`;
   msgs.appendChild(div);
@@ -2855,6 +2867,44 @@ function deleteMsg(btn) {
       wsSend({ type: 'delete_message', msgId, channel: me.channel });
     }
   }
+}
+
+function editMsg(btn) {
+  const msgEl = btn.closest('.msg');
+  const msgId = msgEl.dataset.msgId;
+  const textEl = msgEl.querySelector('.msg-text');
+  const currentText = textEl.textContent.replace(' (edited)', '').trim();
+
+  // Create inline editor
+  const input = document.createElement('input');
+  input.className = 'field';
+  input.value = currentText;
+  input.style.cssText = 'width:100%;margin-top:4px;font-size:12px;padding:5px 8px';
+  textEl.replaceWith(input);
+  input.focus();
+  input.select();
+
+  function confirm() {
+    const newText = input.value.trim();
+    if (!newText || newText === currentText) {
+      cancel(); return;
+    }
+    const div = document.createElement('div');
+    div.className = textEl.className;
+    div.innerHTML = esc(newText) + '<span style="font-size:9px;color:var(--text3);margin-left:4px;letter-spacing:0.04em">(edited)</span>';
+    input.replaceWith(div);
+    wsSend({ type: 'edit_message', msgId, text: newText, channel: me.channel });
+  }
+
+  function cancel() {
+    input.replaceWith(textEl);
+  }
+
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') confirm();
+    if (e.key === 'Escape') cancel();
+  });
+  input.addEventListener('blur', () => setTimeout(cancel, 150));
 }
 
 function renderDmMsg(data, isOwn) {
@@ -3881,6 +3931,12 @@ if (window.electronAPI) {
       if (btn) btn.textContent = window.electronAPI.isMaximized() ? '❐' : '□';
     }, 100);
   };
+
+  // Показываем версию в настройках
+  const verEl = document.getElementById('app-version-display');
+  if (verEl && window.electronAPI && window.electronAPI.getVersion) {
+    verEl.textContent = 'v' + window.electronAPI.getVersion();
+  }
 
   // Перехватываем showNotif и дублируем как нативное уведомление
   // когда окно не в фокусе
