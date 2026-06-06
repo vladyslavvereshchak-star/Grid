@@ -421,6 +421,77 @@ body.electron .app{height:calc(100vh - 32px)}
 .send-btn.active{color:var(--accent)}
 .send-btn:hover{color:var(--accent)}
 
+/* Input extra buttons */
+.input-icon-btn{
+  width:32px;height:32px;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;color:var(--text3);font-size:14px;transition:all 0.2s;flex-shrink:0;
+  border-radius:5px;margin:0 2px;
+}
+.input-icon-btn:hover{color:var(--accent);background:var(--accent-dim)}
+
+/* Emoji Picker */
+#emoji-picker{
+  position:absolute;bottom:60px;left:16px;
+  background:#131416;border:1px solid var(--border2);border-radius:10px;
+  padding:10px;width:300px;max-height:220px;overflow-y:auto;
+  box-shadow:0 12px 40px rgba(0,0,0,0.8);z-index:100;
+  display:none;
+}
+#emoji-picker.open{display:block}
+.emoji-grid{display:flex;flex-wrap:wrap;gap:2px}
+.emoji-btn{
+  width:32px;height:32px;display:flex;align-items:center;justify-content:center;
+  font-size:18px;border-radius:5px;cursor:pointer;transition:background 0.1s;
+  border:none;background:none;
+}
+.emoji-btn:hover{background:rgba(255,255,255,0.06)}
+.emoji-search{
+  width:100%;background:rgba(255,255,255,0.03);border:1px solid var(--border2);
+  border-radius:5px;padding:5px 8px;font-size:11px;font-family:'JetBrains Mono',monospace;
+  color:var(--text);outline:none;margin-bottom:8px;
+}
+.emoji-search::placeholder{color:var(--text3)}
+.emoji-search:focus{border-color:var(--accent-border)}
+
+/* Reactions on messages */
+.msg-reactions{display:flex;flex-wrap:wrap;gap:3px;margin-top:3px}
+.reaction-pill{
+  display:inline-flex;align-items:center;gap:3px;
+  background:rgba(255,255,255,0.04);border:1px solid var(--border2);
+  border-radius:12px;padding:1px 7px;font-size:12px;cursor:pointer;
+  transition:all 0.15s;user-select:none;
+}
+.reaction-pill:hover{background:var(--accent-dim);border-color:var(--accent-border)}
+.reaction-pill.mine{background:var(--accent-dim);border-color:var(--accent-border)}
+.reaction-pill-count{font-size:10px;color:var(--text2);font-family:'JetBrains Mono',monospace}
+
+/* File attach preview */
+.file-attach-preview{
+  display:none;align-items:center;gap:8px;padding:6px 10px;
+  background:rgba(0,229,255,0.04);border:1px solid var(--accent-border);
+  border-radius:6px;margin-bottom:6px;font-size:11px;color:var(--text2);
+}
+.file-attach-preview.visible{display:flex}
+.file-attach-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file-attach-remove{cursor:pointer;color:var(--text3);font-size:13px;flex-shrink:0;transition:color 0.15s}
+.file-attach-remove:hover{color:var(--red)}
+.msg-file{
+  display:inline-flex;align-items:center;gap:8px;
+  background:rgba(255,255,255,0.03);border:1px solid var(--border2);
+  border-radius:6px;padding:6px 10px;margin-top:3px;cursor:pointer;
+  transition:all 0.15s;text-decoration:none;
+}
+.msg-file:hover{background:var(--accent-dim);border-color:var(--accent-border)}
+.msg-file-icon{font-size:16px;color:var(--accent)}
+.msg-file-info{display:flex;flex-direction:column;gap:1px}
+.msg-file-name{font-size:11px;color:var(--text);font-family:'JetBrains Mono',monospace}
+.msg-file-size{font-size:9px;color:var(--text3)}
+.msg-img-attach{max-width:280px;max-height:180px;border-radius:6px;margin-top:4px;cursor:pointer;display:block;border:1px solid var(--border2)}
+
+/* Read receipts */
+.msg-read-status{font-size:9px;color:var(--text3);margin-left:4px;letter-spacing:0.04em;transition:color 0.2s}
+.msg-read-status.read{color:var(--accent)}
+
 /* Profile panel */
 .panel-profile{
   width:180px;background:linear-gradient(180deg,#131416 0%,#0f1011 100%);
@@ -1252,13 +1323,33 @@ input[type=range].ctx-slider::-webkit-slider-runnable-track{
     <div class="typing-indicator" id="typing-indicator"></div>
 
     <div class="chat-input-area">
+      <!-- File attach preview -->
+      <div class="file-attach-preview" id="file-attach-preview">
+        <i class="ti ti-paperclip" style="color:var(--accent);flex-shrink:0"></i>
+        <span class="file-attach-name" id="file-attach-name">file.png</span>
+        <span class="file-attach-remove" onclick="clearFileAttach()"><i class="ti ti-x"></i></span>
+      </div>
+      <!-- Emoji picker -->
+      <div id="emoji-picker">
+        <input class="emoji-search" id="emoji-search-input" placeholder="Search emoji..." oninput="filterEmojis(this.value)"/>
+        <div class="emoji-grid" id="emoji-grid"></div>
+      </div>
       <div class="input-row" id="input-row">
         <div class="input-led"></div>
+        <!-- Attach -->
+        <div class="input-icon-btn" title="Attach file" onclick="triggerFileAttach()">
+          <i class="ti ti-paperclip"></i>
+        </div>
+        <input type="file" id="file-attach-input" style="display:none" onchange="handleFileAttach(this)"/>
         <input class="chat-input" id="chat-input"
           placeholder="Secure connection transmission..."
           maxlength="2000"
           onkeydown="handleInputKey(event)"
           oninput="handleTyping();updateSendBtn()"/>
+        <!-- Emoji -->
+        <div class="input-icon-btn" title="Emoji" onclick="toggleEmojiPicker(event)">
+          <i class="ti ti-mood-smile"></i>
+        </div>
         <div class="send-btn" id="send-btn" onclick="sendMessage()"><i class="ti ti-send"></i></div>
       </div>
     </div>
@@ -1436,6 +1527,7 @@ input[type=range].ctx-slider::-webkit-slider-runnable-track{
       <div class="modal-tab active" onclick="switchTab('account',this)"><i class="ti ti-user"></i> Account</div>
       <div class="modal-tab" onclick="switchTab('voice',this)"><i class="ti ti-microphone"></i> Voice</div>
       <div class="modal-tab" onclick="switchTab('hotkeys',this)"><i class="ti ti-keyboard"></i> Hotkeys</div>
+      <div class="modal-tab" onclick="switchTab('messages',this)"><i class="ti ti-message"></i> Messages</div>
       <div class="modal-tab" onclick="switchTab('network',this)"><i class="ti ti-network"></i> Network</div>
       <div class="modal-close" onclick="closeModal()"><i class="ti ti-x"></i> Close</div>
     </div>
@@ -1549,6 +1641,32 @@ input[type=range].ctx-slider::-webkit-slider-runnable-track{
           </div>
         </div>
         <button class="lang-btn active" onclick="refreshDeviceList()">↻ Refresh Devices</button>
+      </div>
+      <div class="pane" id="pane-messages">
+        <div class="modal-section-title">Messages</div>
+        <div style="margin-bottom:20px">
+          <div class="field-label">Auto-delete messages after</div>
+          <select class="field" id="msg-ttl-select" onchange="saveMsgTTL(this.value)" style="cursor:pointer;margin-top:6px">
+            <option value="0">Never (keep forever)</option>
+            <option value="3600">1 hour</option>
+            <option value="21600">6 hours</option>
+            <option value="86400">24 hours</option>
+            <option value="259200">3 days</option>
+            <option value="604800">7 days</option>
+            <option value="2592000">30 days</option>
+          </select>
+          <div style="margin-top:8px;font-size:10px;color:var(--text3);line-height:1.6">
+            Messages older than this will be auto-deleted. Applies to your messages only on this device. Set to <span style="color:var(--accent)">Never</span> to keep all messages.
+          </div>
+          <div id="msg-ttl-status" style="margin-top:8px;font-size:10px;color:var(--accent);min-height:14px"></div>
+        </div>
+        <div style="padding-top:16px;border-top:1px solid var(--border)">
+          <div class="field-label">Message Search</div>
+          <div style="display:flex;gap:8px;margin-top:6px">
+            <input class="field" id="msg-search-input" placeholder="Search messages..." style="flex:1" oninput="searchMessages(this.value)"/>
+          </div>
+          <div id="msg-search-results" style="margin-top:10px;display:flex;flex-direction:column;gap:4px;max-height:200px;overflow-y:auto"></div>
+        </div>
       </div>
       <div class="pane" id="pane-network">
         <div class="modal-section-title">Network</div>
@@ -2862,9 +2980,11 @@ function renderMsg(data, isHistory) {
         <span class="msg-name" style="color:${data.color}">${esc(data.username)}</span>
         <span class="msg-time">${data.time}</span>
       </div>`:''}
-      <div class="msg-text${isOwn?' own':''}">${esc(data.text)}</div>
+      <div class="msg-text${isOwn?' own':''}">${renderMsgContent(data.text)}</div>
+      <div class="msg-reactions" id="react-${data.id||Math.random().toString(36).slice(2)}"></div>
     </div>
     <div class="msg-actions">
+      <button class="msg-action-btn" title="React" onclick="showReactionPicker(event,this)"><i class="ti ti-mood-smile"></i></button>
       <button class="msg-action-btn" title="Pin"><i class="ti ti-pin"></i></button>
       ${isOwn?`<button class="msg-action-btn" title="Edit" onclick="editMsg(this)"><i class="ti ti-pencil"></i></button>`:''}
       <button class="msg-action-btn del" title="Delete" onclick="deleteMsg(this)"><i class="ti ti-trash"></i></button>
@@ -2944,9 +3064,11 @@ function renderDmMsg(data, isOwn) {
         <span class="msg-name" style="color:${color}">${esc(name)}</span>
         <span class="msg-time">${data.time}</span>
       </div>`:''}
-      <div class="msg-text${isOwn?' own':''}">${esc(data.text)}</div>
+      <div class="msg-text${isOwn?' own':''}">${renderMsgContent(data.text)}</div>
+      <div class="msg-reactions" id="react-dm-${data.id||Math.random().toString(36).slice(2)}"></div>
     </div>
     <div class="msg-actions">
+      <button class="msg-action-btn" title="React" onclick="showReactionPicker(event,this)"><i class="ti ti-mood-smile"></i></button>
       ${isOwn?`<button class="msg-action-btn" title="Edit" onclick="editMsg(this)"><i class="ti ti-pencil"></i></button>`:''}
       <button class="msg-action-btn del" title="Delete" onclick="deleteMsg(this)"><i class="ti ti-trash"></i></button>
     </div>`;
@@ -3944,6 +4066,373 @@ window.startCallWebRTC = async function(peerUsername, isInitiator) {
     };
   }
 };
+</script>
+<script>
+// ══════════════════════════════════════
+//  EMOJI PICKER
+// ══════════════════════════════════════
+const EMOJI_LIST = ['😀','😂','🤣','😍','🥰','😎','🤩','😭','😤','😡','🤔','🤗','😴','🥳','😱','🙄','😏','😇','🤯','🥺','👍','👎','❤️','🔥','💯','✅','❌','⭐','💀','👀','🎉','🎊','💪','🙏','👏','🤝','✌️','☑️','💬','📌','🔔','⚡','🎯','🚀','💡','🌊','🌙','☀️','🌈','💎','🏆'];
+
+let emojiPickerOpen = false;
+
+function initEmojiPicker() {
+  const grid = document.getElementById('emoji-grid');
+  if (!grid) return;
+  renderEmojiGrid(EMOJI_LIST);
+}
+
+function renderEmojiGrid(list) {
+  const grid = document.getElementById('emoji-grid');
+  grid.innerHTML = '';
+  list.forEach(e => {
+    const btn = document.createElement('button');
+    btn.className = 'emoji-btn';
+    btn.textContent = e;
+    btn.onclick = () => insertEmoji(e);
+    grid.appendChild(btn);
+  });
+}
+
+function filterEmojis(q) {
+  // Simple filter — in real app would use names
+  renderEmojiGrid(q ? EMOJI_LIST.slice(0,20) : EMOJI_LIST);
+}
+
+function toggleEmojiPicker(e) {
+  e.stopPropagation();
+  const picker = document.getElementById('emoji-picker');
+  emojiPickerOpen = !emojiPickerOpen;
+  picker.classList.toggle('open', emojiPickerOpen);
+  if (emojiPickerOpen) {
+    initEmojiPicker();
+    document.getElementById('emoji-search-input').focus();
+  }
+}
+
+function insertEmoji(emoji) {
+  const inp = document.getElementById('chat-input');
+  const start = inp.selectionStart;
+  const end = inp.selectionEnd;
+  const val = inp.value;
+  inp.value = val.slice(0, start) + emoji + val.slice(end);
+  inp.selectionStart = inp.selectionEnd = start + emoji.length;
+  inp.focus();
+  updateSendBtn();
+  // Close picker
+  document.getElementById('emoji-picker').classList.remove('open');
+  emojiPickerOpen = false;
+}
+
+// Close picker on outside click
+document.addEventListener('click', (e) => {
+  const picker = document.getElementById('emoji-picker');
+  if (picker && !picker.contains(e.target) && emojiPickerOpen) {
+    picker.classList.remove('open');
+    emojiPickerOpen = false;
+  }
+});
+
+// ══════════════════════════════════════
+//  FILE ATTACH
+// ══════════════════════════════════════
+let attachedFile = null;
+let attachedFileData = null; // base64
+
+function triggerFileAttach() {
+  document.getElementById('file-attach-input').click();
+}
+
+function handleFileAttach(input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (file.size > 5 * 1024 * 1024) {
+    showNotif('File too large (max 5MB)');
+    input.value = '';
+    return;
+  }
+  attachedFile = file;
+  const preview = document.getElementById('file-attach-preview');
+  document.getElementById('file-attach-name').textContent = file.name + ' (' + formatBytes(file.size) + ')';
+  preview.classList.add('visible');
+
+  const reader = new FileReader();
+  reader.onload = (e) => { attachedFileData = e.target.result; };
+  reader.readAsDataURL(file);
+  input.value = '';
+}
+
+function clearFileAttach() {
+  attachedFile = null;
+  attachedFileData = null;
+  document.getElementById('file-attach-preview').classList.remove('visible');
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return bytes + 'B';
+  if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + 'KB';
+  return (bytes/(1024*1024)).toFixed(1) + 'MB';
+}
+
+// Patch renderMsgContent to render images/files from data urls
+function renderMsgContent(text) {
+  if (!text) return '';
+  // Check if it's a file attachment payload (JSON)
+  if (text.startsWith('__FILE__:')) {
+    try {
+      const payload = JSON.parse(text.slice(9));
+      if (payload.type && payload.type.startsWith('image/')) {
+        return `<img src="${payload.data}" class="msg-img-attach" onclick="window.open('${payload.data}')" title="${esc(payload.name)}">`;
+      }
+      return `<a class="msg-file" href="${payload.data}" download="${payload.name}" target="_blank">
+        <i class="ti ti-file msg-file-icon"></i>
+        <div class="msg-file-info">
+          <span class="msg-file-name">${esc(payload.name)}</span>
+          <span class="msg-file-size">${payload.size}</span>
+        </div>
+        <i class="ti ti-download" style="color:var(--text3);font-size:12px;margin-left:auto"></i>
+      </a>`;
+    } catch(e) {}
+  }
+  return esc(text);
+}
+
+// Patch sendMessage to include file
+const _origSendMessage = window.sendMessage;
+window.sendMessage = function() {
+  if (attachedFile && attachedFileData) {
+    const inp = document.getElementById('chat-input');
+    const payload = JSON.stringify({ name: attachedFile.name, type: attachedFile.type, size: formatBytes(attachedFile.size), data: attachedFileData });
+    const fakeInp = { value: '__FILE__:' + payload };
+    // Send file as message
+    if (!ws || ws.readyState !== 1) return;
+    if (dmMode && dmWith) {
+      ws.send(JSON.stringify({ type:'dm', to: dmWith.username, text: '__FILE__:' + payload }));
+    } else {
+      const serverCh = CH_SERVER_MAP[me.channel] || me.channel;
+      ws.send(JSON.stringify({ type:'message', text: '__FILE__:' + payload, channel: serverCh }));
+    }
+    clearFileAttach();
+    if (!inp.value.trim()) { inp.focus(); updateSendBtn(); return; }
+  }
+  _origSendMessage();
+};
+
+// ══════════════════════════════════════
+//  REACTIONS
+// ══════════════════════════════════════
+// Store: { msgId: { emoji: { count, mine } } }
+const msgReactions = {};
+
+let reactionPickerTarget = null;
+let reactionPickerEl = null;
+
+function showReactionPicker(e, btn) {
+  e.stopPropagation();
+  const msgEl = btn.closest('.msg');
+  // Remove existing picker
+  if (reactionPickerEl) { reactionPickerEl.remove(); reactionPickerEl = null; }
+  reactionPickerTarget = msgEl;
+
+  const picker = document.createElement('div');
+  picker.style.cssText = `
+    position:fixed;background:#131416;border:1px solid rgba(255,255,255,0.08);
+    border-radius:10px;padding:8px;display:flex;gap:3px;flex-wrap:wrap;
+    box-shadow:0 12px 40px rgba(0,0,0,0.8);z-index:9999;max-width:220px;
+  `;
+  // Quick reactions
+  ['👍','❤️','😂','😮','😢','🔥','💯','✅'].forEach(emoji => {
+    const b = document.createElement('button');
+    b.className = 'emoji-btn';
+    b.textContent = emoji;
+    b.onclick = (ev) => { ev.stopPropagation(); addReaction(msgEl, emoji); picker.remove(); reactionPickerEl = null; };
+    picker.appendChild(b);
+  });
+
+  // Position near button
+  const rect = btn.getBoundingClientRect();
+  picker.style.left = Math.min(rect.left, window.innerWidth - 240) + 'px';
+  picker.style.top = (rect.top - 60) + 'px';
+  document.body.appendChild(picker);
+  reactionPickerEl = picker;
+
+  // Close on outside click
+  setTimeout(() => {
+    document.addEventListener('click', function closeRP(ev) {
+      if (!picker.contains(ev.target)) {
+        picker.remove(); reactionPickerEl = null;
+        document.removeEventListener('click', closeRP);
+      }
+    });
+  }, 0);
+}
+
+function addReaction(msgEl, emoji) {
+  const msgId = msgEl.dataset.msgId || msgEl.dataset.uid;
+  if (!msgId) return;
+  if (!msgReactions[msgId]) msgReactions[msgId] = {};
+  const r = msgReactions[msgId];
+  if (!r[emoji]) r[emoji] = { count: 0, mine: false };
+  if (r[emoji].mine) {
+    // toggle off
+    r[emoji].count--;
+    r[emoji].mine = false;
+    if (r[emoji].count <= 0) delete r[emoji];
+  } else {
+    r[emoji].count++;
+    r[emoji].mine = true;
+  }
+  renderReactions(msgEl, msgId);
+  // Broadcast via WS (best-effort)
+  if (ws && ws.readyState === 1) {
+    wsSend({ type: 'reaction', msgId, emoji, action: r[emoji] ? 'add' : 'remove' });
+  }
+}
+
+function renderReactions(msgEl, msgId) {
+  let container = msgEl.querySelector('.msg-reactions');
+  if (!container) {
+    container = document.createElement('div');
+    container.className = 'msg-reactions';
+    msgEl.querySelector('.msg-body').appendChild(container);
+  }
+  container.innerHTML = '';
+  const r = msgReactions[msgId] || {};
+  Object.entries(r).forEach(([emoji, data]) => {
+    if (data.count <= 0) return;
+    const pill = document.createElement('div');
+    pill.className = 'reaction-pill' + (data.mine ? ' mine' : '');
+    pill.innerHTML = `<span>${emoji}</span><span class="reaction-pill-count">${data.count}</span>`;
+    pill.onclick = () => addReaction(msgEl, emoji);
+    container.appendChild(pill);
+  });
+}
+
+// Handle incoming reactions from server
+const _origHandleMsg = window.handleMsg;
+window.handleMsg = function(data) {
+  if (data.type === 'reaction') {
+    const msgEl = document.querySelector(`.msg[data-msg-id="${data.msgId}"]`);
+    if (msgEl) {
+      if (!msgReactions[data.msgId]) msgReactions[data.msgId] = {};
+      const r = msgReactions[data.msgId];
+      if (data.action === 'add') {
+        if (!r[data.emoji]) r[data.emoji] = { count: 0, mine: false };
+        r[data.emoji].count++;
+      } else {
+        if (r[data.emoji]) r[data.emoji].count = Math.max(0, r[data.emoji].count - 1);
+      }
+      renderReactions(msgEl, data.msgId);
+    }
+    return;
+  }
+  _origHandleMsg(data);
+};
+
+// ══════════════════════════════════════
+//  MESSAGE AUTO-DELETE TIMER
+// ══════════════════════════════════════
+let msgTTL = parseInt(localStorage.getItem('grid_msg_ttl') || '0');
+
+function saveMsgTTL(val) {
+  msgTTL = parseInt(val);
+  localStorage.setItem('grid_msg_ttl', val);
+  const status = document.getElementById('msg-ttl-status');
+  if (status) {
+    status.textContent = msgTTL === 0 ? 'Messages will be kept forever' : `Messages older than ${document.getElementById('msg-ttl-select').options[document.getElementById('msg-ttl-select').selectedIndex].text} will be deleted`;
+    setTimeout(() => { if (status) status.textContent = ''; }, 3000);
+  }
+  if (msgTTL > 0) scheduleMessageCleanup();
+}
+
+function scheduleMessageCleanup() {
+  if (!msgTTL) return;
+  // Client-side only — remove old messages from DOM
+  const msgs = document.querySelectorAll('.msg[data-msg-id]');
+  const now = Date.now();
+  msgs.forEach(msgEl => {
+    const timeEl = msgEl.querySelector('.msg-time');
+    if (timeEl && msgEl.dataset.msgTimestamp) {
+      const age = (now - parseInt(msgEl.dataset.msgTimestamp)) / 1000;
+      if (age > msgTTL) {
+        msgEl.style.opacity = '0';
+        setTimeout(() => msgEl.remove(), 300);
+      }
+    }
+  });
+}
+
+// Apply saved TTL on load
+window.addEventListener('load', () => {
+  const sel = document.getElementById('msg-ttl-select');
+  if (sel && msgTTL) sel.value = String(msgTTL);
+  // Run cleanup every 5 minutes
+  setInterval(scheduleMessageCleanup, 5 * 60 * 1000);
+});
+
+// ══════════════════════════════════════
+//  MESSAGE SEARCH (in Settings > Messages)
+// ══════════════════════════════════════
+function searchMessages(query) {
+  const results = document.getElementById('msg-search-results');
+  if (!results) return;
+  results.innerHTML = '';
+  if (!query.trim()) return;
+  const q = query.toLowerCase();
+  const msgs = document.querySelectorAll('.msg');
+  let found = 0;
+  msgs.forEach(msgEl => {
+    const textEl = msgEl.querySelector('.msg-text');
+    const nameEl = msgEl.querySelector('.msg-name');
+    if (!textEl) return;
+    const text = textEl.textContent.toLowerCase();
+    const name = nameEl ? nameEl.textContent.toLowerCase() : '';
+    if (text.includes(q) || name.includes(q)) {
+      found++;
+      const div = document.createElement('div');
+      div.style.cssText = 'background:rgba(255,255,255,0.02);border:1px solid var(--border2);border-radius:5px;padding:6px 10px;cursor:pointer;transition:background 0.15s';
+      div.onmouseover = () => { div.style.background = 'var(--accent-dim)'; };
+      div.onmouseout = () => { div.style.background = 'rgba(255,255,255,0.02)'; };
+      const authorColor = nameEl ? nameEl.style.color : 'var(--accent)';
+      div.innerHTML = `
+        <div style="font-size:10px;color:${authorColor};margin-bottom:3px;font-weight:700">${nameEl ? nameEl.textContent : 'Unknown'}</div>
+        <div style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${textEl.textContent.slice(0,80)}</div>
+      `;
+      div.onclick = () => {
+        closeModal();
+        msgEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        msgEl.style.background = 'rgba(0,229,255,0.08)';
+        setTimeout(() => { msgEl.style.background = ''; }, 1500);
+      };
+      results.appendChild(div);
+    }
+  });
+  if (!found) {
+    results.innerHTML = '<div style="font-size:11px;color:var(--text3);text-align:center;padding:10px">No messages found</div>';
+  }
+}
+
+// Also add a search button in chat header
+(function addSearchBtn() {
+  const headerRight = document.querySelector('.chat-header-right');
+  if (!headerRight) return;
+  const searchBtn = document.createElement('div');
+  searchBtn.className = 'call-btn';
+  searchBtn.title = 'Search messages';
+  searchBtn.innerHTML = '<i class="ti ti-search"></i>';
+  searchBtn.onclick = () => {
+    openModal();
+    // Switch to messages tab
+    setTimeout(() => {
+      document.querySelectorAll('.modal-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.pane').forEach(p => p.classList.remove('active'));
+      const msgPane = document.getElementById('pane-messages');
+      if (msgPane) { msgPane.classList.add('active'); }
+      const msgInput = document.getElementById('msg-search-input');
+      if (msgInput) { msgInput.focus(); }
+    }, 100);
+  };
+  headerRight.insertBefore(searchBtn, headerRight.firstChild);
+})();
 </script>
 </body>
 </html>
