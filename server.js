@@ -49,6 +49,31 @@ async function initDB() {
   await pool.query(`
     ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT DEFAULT NULL;
   `).catch(() => {});
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS messages (
+      id BIGSERIAL PRIMARY KEY,
+      msg_id TEXT UNIQUE,
+      channel VARCHAR(100) NOT NULL,
+      username VARCHAR(50) NOT NULL,
+      color VARCHAR(20) NOT NULL,
+      avatar TEXT DEFAULT NULL,
+      text TEXT NOT NULL,
+      time VARCHAR(10),
+      edited BOOLEAN DEFAULT FALSE,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS dm_messages (
+      id BIGSERIAL PRIMARY KEY,
+      msg_id TEXT UNIQUE,
+      from_user VARCHAR(50) NOT NULL,
+      to_user VARCHAR(50) NOT NULL,
+      from_color VARCHAR(20),
+      from_avatar TEXT DEFAULT NULL,
+      text TEXT NOT NULL,
+      time VARCHAR(10),
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+  `);
   console.log('✅ БД готова');
 }
 
@@ -144,6 +169,34 @@ app.post('/api/avatar', async (req, res) => {
 const channels = { 'общий': [], 'игры': [], 'фидбек': [] };
 const onlineUsers = new Map();
 const dmHistory = new Map();
+
+// Load messages from DB into memory
+async function loadHistory() {
+  try {
+    const res = await pool.query(`SELECT * FROM messages ORDER BY created_at DESC LIMIT 500`);
+    res.rows.reverse().forEach(row => {
+      const ch = row.channel;
+      if (!channels[ch]) channels[ch] = [];
+      channels[ch].push({
+        type: 'message', id: row.msg_id, username: row.username,
+        color: row.color, avatar: row.avatar, text: row.text,
+        channel: ch, time: row.time, edited: row.edited
+      });
+    });
+    const dmRes = await pool.query(`SELECT * FROM dm_messages ORDER BY created_at DESC LIMIT 1000`);
+    dmRes.rows.reverse().forEach(row => {
+      const key = [row.from_user, row.to_user].sort().join('|');
+      if (!dmHistory.has(key)) dmHistory.set(key, []);
+      dmHistory.get(key).push({
+        type: 'dm', id: row.msg_id, from: row.from_user, to: row.to_user,
+        fromColor: row.from_color, fromAvatar: row.from_avatar,
+        text: row.text, time: row.time
+      });
+    });
+    console.log('✅ История загружена из БД');
+  } catch(e) { console.error('load history error', e); }
+}
+loadHistory();
 
 const voiceChannels = { 'голос-1': new Set(), 'голос-2': new Set() };
 
@@ -253,6 +306,11 @@ wss.on('connection', (ws, req) => {
         channels[ch].push(msg);
         if (channels[ch].length > 200) channels[ch].shift();
         broadcast(msg);
+        // Save to DB
+        pool.query(
+          `INSERT INTO messages (msg_id, channel, username, color, avatar, text, time) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING`,
+          [String(msg.id), ch, msg.username, msg.color, msg.avatar || null, msg.text, msg.time]
+        ).catch(console.error);
         break;
       }
 
@@ -273,6 +331,11 @@ wss.on('connection', (ws, req) => {
         dmHistory.get(key).push(msg);
         sendTo(ws, msg);
         if (recipientWs) sendTo(recipientWs, msg);
+        // Save to DB
+        pool.query(
+          `INSERT INTO dm_messages (msg_id, from_user, to_user, from_color, from_avatar, text, time) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING`,
+          [String(msg.id), msg.from, msg.to, msg.fromColor, msg.fromAvatar || null, msg.text, msg.time]
+        ).catch(console.error);
         break;
       }
 
@@ -303,6 +366,8 @@ wss.on('connection', (ws, req) => {
           }
         }
         broadcast({ type: 'edit_message', msgId: data.msgId, text: data.text });
+        pool.query(`UPDATE messages SET text=$1, edited=TRUE WHERE msg_id=$2`, [data.text, String(data.msgId)]).catch(console.error);
+        pool.query(`UPDATE dm_messages SET text=$1 WHERE msg_id=$2`, [data.text, String(data.msgId)]).catch(console.error);
         break;
       }
 
@@ -313,6 +378,8 @@ wss.on('connection', (ws, req) => {
         }
         // Рассылаем всем чтобы удалили у себя
         broadcast({ type: 'delete_message', msgId: data.msgId });
+        pool.query(`DELETE FROM messages WHERE msg_id=$1`, [String(data.msgId)]).catch(console.error);
+        pool.query(`DELETE FROM dm_messages WHERE msg_id=$1`, [String(data.msgId)]).catch(console.error);
         break;
       }
 
