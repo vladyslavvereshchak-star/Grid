@@ -2909,6 +2909,9 @@ async function startCallWebRTC(peerUsername, isInitiator) {
 
   callPc.ontrack = (e) => {
     if (e.track.kind !== 'audio') return;
+
+    // Простой надёжный вариант — без AudioContext, напрямую в audio элемент
+    // AudioContext ломает звук если suspended (без user gesture)
     let audio = document.getElementById('call-remote-audio');
     if (!audio) {
       audio = document.createElement('audio');
@@ -2919,41 +2922,23 @@ async function startCallWebRTC(peerUsername, isInitiator) {
       document.body.appendChild(audio);
     }
     audio.muted = callSoundMuted;
+    audio.volume = Math.min(1, (typeof outputGainValue !== 'undefined' ? outputGainValue : 200) / 100);
 
     const remoteStream = (e.streams && e.streams[0])
       ? e.streams[0]
       : (() => { const ms = new MediaStream(); ms.addTrack(e.track); return ms; })();
 
-    // Усиливаем звук через GainNode с настраиваемым outputGainValue
-    try {
-      if (callAudioCtx) { callAudioCtx.close().catch(()=>{}); callAudioCtx = null; }
-      callAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      const doConnect = () => {
-        const source = callAudioCtx.createMediaStreamSource(remoteStream);
-        const gain   = callAudioCtx.createGain();
-        gain.gain.value = (typeof outputGainValue !== 'undefined' ? outputGainValue : 200) / 100;
-        callOutputGainNode = gain; // сохраняем для live-изменения
-        const dest = callAudioCtx.createMediaStreamDestination();
-        source.connect(gain);
-        gain.connect(dest);
-        audio.srcObject = dest.stream;
-        audio.play().catch(() => {});
-        applySinkId(audio);
-      };
-      if (callAudioCtx.state === 'suspended') {
-        callAudioCtx.resume().then(doConnect).catch(() => {
-          audio.srcObject = remoteStream;
-          audio.play().catch(() => {});
-          applySinkId(audio);
-        });
-      } else {
-        doConnect();
-      }
-    } catch(err) {
-      audio.srcObject = remoteStream;
-      audio.play().catch(() => {});
-      applySinkId(audio);
-    }
+    audio.srcObject = remoteStream;
+    audio.play().catch(() => {
+      document.addEventListener('click', () => audio.play().catch(() => {}), { once: true });
+    });
+    applySinkId(audio);
+
+    // Сохраняем ссылку чтобы менять громкость на лету
+    callOutputGainNode = { gain: { 
+      get value() { return audio.volume; },
+      set value(v) { audio.volume = Math.min(1, Math.max(0, v)); }
+    }};
   };
 
   callPc.onconnectionstatechange = () => {
