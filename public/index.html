@@ -2683,17 +2683,20 @@ async function startCallWebRTC(peerUsername, isInitiator) {
     callStream = await navigator.mediaDevices.getUserMedia({
       video: false,
       audio: {
-        echoCancellation:    true,   // принудительно включаем AEC
-        noiseSuppression:    { ideal: audioSettings.noise },
-        autoGainControl:     true,
-        googAutoGainControl: true,
-        googAutoGainControl2: true,
-        googEchoCancellation: true,  // Chrome-специфичный флаг
-        googHighpassFilter:  true,
+        echoCancellation:       true,
+        noiseSuppression:       true,
+        autoGainControl:        true,
+        googAutoGainControl:    true,
+        googAutoGainControl2:   true,
+        googEchoCancellation:   true,
+        googNoiseSuppression:   true,
+        googNoiseSuppression2:  true,
+        googHighpassFilter:     true,
+        googTypingNoiseDetection: true,
         channelCount: { ideal: 1 },
         sampleRate:   { ideal: 48000 },
         latency:      { ideal: 0.01 },
-        ...(voiceInputDeviceId ? { deviceId: { ideal: voiceInputDeviceId } } : {})
+        ...(voiceInputDeviceId ? { deviceId: { exact: voiceInputDeviceId } } : {})
       }
     });
   } catch(e) {
@@ -2729,26 +2732,39 @@ async function startCallWebRTC(peerUsername, isInitiator) {
     }
     audio.muted = callSoundMuted;
 
-    // Берём стрим напрямую — без GainNode/AudioContext
-    // AudioContext создаётся в suspended состоянии без user gesture и глушит звук
     const remoteStream = (e.streams && e.streams[0])
       ? e.streams[0]
       : (() => { const ms = new MediaStream(); ms.addTrack(e.track); return ms; })();
 
-    audio.srcObject = remoteStream;
-
-    // Убеждаемся что AudioContext (если есть) не suspended
-    if (callAudioCtx && callAudioCtx.state === 'suspended') {
-      callAudioCtx.resume().catch(() => {});
+    // Усиливаем звук через GainNode — но только после resume() чтобы не suspended
+    try {
+      if (callAudioCtx) { callAudioCtx.close().catch(()=>{}); callAudioCtx = null; }
+      callAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const doConnect = () => {
+        const source = callAudioCtx.createMediaStreamSource(remoteStream);
+        const gain   = callAudioCtx.createGain();
+        gain.gain.value = 2.0;
+        const dest = callAudioCtx.createMediaStreamDestination();
+        source.connect(gain);
+        gain.connect(dest);
+        audio.srcObject = dest.stream;
+        audio.play().catch(() => {});
+        applySinkId(audio);
+      };
+      if (callAudioCtx.state === 'suspended') {
+        callAudioCtx.resume().then(doConnect).catch(() => {
+          audio.srcObject = remoteStream;
+          audio.play().catch(() => {});
+          applySinkId(audio);
+        });
+      } else {
+        doConnect();
+      }
+    } catch(err) {
+      audio.srcObject = remoteStream;
+      audio.play().catch(() => {});
+      applySinkId(audio);
     }
-
-    // Принудительно запускаем воспроизведение
-    const playPromise = audio.play();
-    if (playPromise) playPromise.catch(() => {
-      // Autoplay заблокирован — пробуем после любого клика
-      document.addEventListener('click', () => audio.play().catch(()=>{}), { once: true });
-    });
-    applySinkId(audio);
   };
 
   callPc.onconnectionstatechange = () => {
