@@ -1665,7 +1665,7 @@ input[type=range].ctx-slider::-webkit-slider-runnable-track{
         <div class="modal-section-title" style="display:flex;align-items:center;gap:8px">
           <i class="ti ti-microphone" style="color:var(--accent);font-size:13px"></i> INPUT PROFILE
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:20px">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:6px">
           <div class="voice-profile-card" id="vp-isolation" onclick="setVoiceProfile('isolation')">
             <div class="vp-icon"><i class="ti ti-shield-check"></i></div>
             <div class="vp-name">Isolation</div>
@@ -1680,6 +1680,17 @@ input[type=range].ctx-slider::-webkit-slider-runnable-track{
             <div class="vp-icon"><i class="ti ti-adjustments-horizontal"></i></div>
             <div class="vp-name">Custom</div>
             <div class="vp-desc">Manual control</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:20px">
+          <div style="font-size:9px;color:var(--text3);text-align:center;padding:4px 6px;background:rgba(0,229,255,0.04);border-radius:4px;letter-spacing:0.04em">
+            <span style="color:var(--accent)">✓ Recommended</span><br>for noisy rooms
+          </div>
+          <div style="font-size:9px;color:var(--text3);text-align:center;padding:4px 6px;background:rgba(255,255,255,0.02);border-radius:4px;letter-spacing:0.04em">
+            Best for<br>headsets & quiet
+          </div>
+          <div style="font-size:9px;color:var(--text3);text-align:center;padding:4px 6px;background:rgba(255,255,255,0.02);border-radius:4px;letter-spacing:0.04em">
+            Full control<br>for power users
           </div>
         </div>
 
@@ -1756,7 +1767,10 @@ input[type=range].ctx-slider::-webkit-slider-runnable-track{
                   style="flex:1" oninput="updateNoiseGateThreshold(this.value)">
                 <span style="font-size:10px;color:var(--accent);min-width:36px;text-align:right" id="noisegate-val">15%</span>
               </div>
-              <div style="font-size:10px;color:var(--text3);margin-top:5px">Higher = more aggressive · cuts more background</div>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-top:5px">
+                <span style="font-size:10px;color:var(--text3)">Higher = more aggressive · cuts more background</span>
+                <span style="font-size:9px;color:var(--accent);background:rgba(0,229,255,0.08);border:1px solid rgba(0,229,255,0.15);padding:1px 7px;border-radius:3px;letter-spacing:0.04em">rec: 15–25%</span>
+              </div>
             </div>
           </div>
 
@@ -1766,7 +1780,10 @@ input[type=range].ctx-slider::-webkit-slider-runnable-track{
               <div class="setting-label" style="display:flex;align-items:center;gap:6px">
                 <i class="ti ti-microphone-2" style="color:var(--accent);font-size:12px"></i> Input Sensitivity
               </div>
-              <div style="font-size:10px;color:var(--text3);margin-top:2px">Boost your mic volume</div>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-top:2px">
+                <span style="font-size:10px;color:var(--text3)">Boost your mic volume</span>
+                <span style="font-size:9px;color:var(--accent);background:rgba(0,229,255,0.08);border:1px solid rgba(0,229,255,0.15);padding:1px 7px;border-radius:3px;letter-spacing:0.04em">rec: 100%</span>
+              </div>
             </div>
             <div style="display:flex;align-items:center;gap:10px">
               <span style="font-size:10px;color:var(--text3);min-width:20px">0%</span>
@@ -1782,7 +1799,10 @@ input[type=range].ctx-slider::-webkit-slider-runnable-track{
               <div class="setting-label" style="display:flex;align-items:center;gap:6px">
                 <i class="ti ti-volume" style="color:var(--accent);font-size:12px"></i> Incoming Volume
               </div>
-              <div style="font-size:10px;color:var(--text3);margin-top:2px">Boost volume of people calling you</div>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-top:2px">
+                <span style="font-size:10px;color:var(--text3)">Boost volume of people calling you</span>
+                <span style="font-size:9px;color:var(--accent);background:rgba(0,229,255,0.08);border:1px solid rgba(0,229,255,0.15);padding:1px 7px;border-radius:3px;letter-spacing:0.04em">rec: 150–200%</span>
+              </div>
             </div>
             <div style="display:flex;align-items:center;gap:10px">
               <span style="font-size:10px;color:var(--text3);min-width:20px">0%</span>
@@ -1948,6 +1968,13 @@ let audioSettings = {
   noise: localStorage.getItem('grid_noise') !== 'false',
   gain:  localStorage.getItem('grid_gain')  !== 'false',
 };
+// Voice profile & gain settings — must be declared early (used in startCallWebRTC)
+let noiseGateEnabled   = localStorage.getItem('grid_noisegate') === 'true';
+let noiseGateThreshold = parseInt(localStorage.getItem('grid_noisegate_threshold') || '15');
+let inputGainValue     = parseInt(localStorage.getItem('grid_input_gain') || '100');
+let outputGainValue    = parseInt(localStorage.getItem('grid_output_gain') || '200');
+let callOutputGainNode = null;
+let voiceProfile       = localStorage.getItem('grid_voice_profile') || 'custom';
 let micLevelAnimFrame = null;
 let micTestStream = null;
 
@@ -2834,26 +2861,32 @@ async function startCallWebRTC(peerUsername, isInitiator) {
   // Получаем поток — echo cancellation должно работать нативно в браузере
   // ВАЖНО: НЕ пропускаем через Web Audio API (createMediaStreamSource→dest)
   // это ломает браузерный AEC (известный баг Chrome)
+  // Build audio constraints based on voice profile
+  const buildCallAudioConstraints = () => {
+    const base = { channelCount: { ideal: 1 }, sampleRate: { ideal: 48000 }, latency: { ideal: 0.01 } };
+    if (voiceInputDeviceId) base.deviceId = { exact: voiceInputDeviceId };
+    if (voiceProfile === 'studio') {
+      // Raw — no processing at all
+      return { ...base, echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+    } else if (voiceProfile === 'isolation') {
+      // Max everything
+      return { ...base, echoCancellation: true, noiseSuppression: true, autoGainControl: true,
+        googEchoCancellation: true, googNoiseSuppression: true, googNoiseSuppression2: true,
+        googAutoGainControl: true, googHighpassFilter: true, googTypingNoiseDetection: true };
+    } else {
+      // Custom — use audioSettings toggles
+      return { ...base,
+        echoCancellation: audioSettings.echo, noiseSuppression: audioSettings.noise,
+        autoGainControl: audioSettings.gain,
+        googEchoCancellation: audioSettings.echo, googNoiseSuppression: audioSettings.noise,
+        googNoiseSuppression2: audioSettings.noise, googAutoGainControl: audioSettings.gain,
+        googAutoGainControl2: audioSettings.gain, googHighpassFilter: true,
+        googTypingNoiseDetection: true };
+    }
+  };
+
   try {
-    callStream = await navigator.mediaDevices.getUserMedia({
-      video: false,
-      audio: {
-        echoCancellation:       true,
-        noiseSuppression:       true,
-        autoGainControl:        true,
-        googAutoGainControl:    true,
-        googAutoGainControl2:   true,
-        googEchoCancellation:   true,
-        googNoiseSuppression:   true,
-        googNoiseSuppression2:  true,
-        googHighpassFilter:     true,
-        googTypingNoiseDetection: true,
-        channelCount: { ideal: 1 },
-        sampleRate:   { ideal: 48000 },
-        latency:      { ideal: 0.01 },
-        ...(voiceInputDeviceId ? { deviceId: { exact: voiceInputDeviceId } } : {})
-      }
-    });
+    callStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: buildCallAudioConstraints() });
   } catch(e) {
     try {
       callStream = await navigator.mediaDevices.getUserMedia({
@@ -4680,12 +4713,7 @@ if (window.electronAPI) {
 // ══════════════════════════════════════
 //  VOICE SETTINGS — profiles, noise gate, gain
 // ══════════════════════════════════════
-let noiseGateEnabled   = localStorage.getItem('grid_noisegate') === 'true';
-let noiseGateThreshold = parseInt(localStorage.getItem('grid_noisegate_threshold') || '15');
-let inputGainValue     = parseInt(localStorage.getItem('grid_input_gain') || '100');
-let outputGainValue    = parseInt(localStorage.getItem('grid_output_gain') || '200');
-let callOutputGainNode = null; // GainNode для входящего звука (обновляется при звонке)
-let voiceProfile       = localStorage.getItem('grid_voice_profile') || 'custom';
+
 
 function setVoiceProfile(profile) {
   voiceProfile = profile;
