@@ -553,18 +553,31 @@ body.electron .app{height:calc(100vh - 32px)}
 /* Speaking ring — появляется когда говорит */
 .call-participant-avatar-wrap.speaking .call-participant-avatar{
   border-color:var(--accent);
-  box-shadow:0 0 0 3px rgba(0,229,255,0.25), 0 0 24px rgba(0,229,255,0.3);
+  box-shadow:0 0 0 2px rgba(0,229,255,0.4);
+  transition:box-shadow 0.05s;
 }
 .call-participant-speaking-ring{
-  position:absolute;inset:-6px;border-radius:20px;
-  border:2px solid rgba(0,229,255,0);
-  transition:border-color 0.15s,box-shadow 0.15s;
+  position:absolute;border-radius:20px;
+  border:1.5px solid rgba(0,229,255,0);
   pointer-events:none;z-index:1;
+  transition:opacity 0.05s;
+  opacity:0;
 }
+.call-participant-speaking-ring:nth-child(1){inset:-6px}
+.call-participant-speaking-ring:nth-child(2){inset:-13px}
+.call-participant-speaking-ring:nth-child(3){inset:-21px}
 .call-participant-avatar-wrap.speaking .call-participant-speaking-ring{
-  border-color:rgba(0,229,255,0.5);
-  box-shadow:0 0 18px rgba(0,229,255,0.2);
-  animation:speakPulse 0.8s ease-in-out infinite alternate;
+  border-color:rgba(0,229,255,0.6);
+  opacity:1;
+}
+.call-participant-avatar-wrap.speaking .call-participant-speaking-ring:nth-child(1){
+  border-color:rgba(0,229,255,0.7);
+}
+.call-participant-avatar-wrap.speaking .call-participant-speaking-ring:nth-child(2){
+  border-color:rgba(0,229,255,0.4);
+}
+.call-participant-avatar-wrap.speaking .call-participant-speaking-ring:nth-child(3){
+  border-color:rgba(0,229,255,0.2);
 }
 @keyframes speakPulse{
   0%{box-shadow:0 0 8px rgba(0,229,255,0.15)}
@@ -3699,14 +3712,20 @@ function startSpeakingDetection() {
       speakAnimMe = requestAnimationFrame(tick);
       analyser.getByteFrequencyData(buf);
       const avg = buf.slice(0, 60).reduce((a,b)=>a+b,0) / 60;
-      const isSpeaking = avg > 18;
-      if (isSpeaking !== speaking) {
-        speaking = isSpeaking;
-        const wrap = document.getElementById('call-av-wrap-me');
-        const st = document.getElementById('call-status-me');
-        if (wrap) wrap.classList.toggle('speaking', speaking && !callMuted);
-        if (st) { st.textContent = (speaking && !callMuted) ? 'speaking...' : 'you'; st.className = 'call-participant-status' + ((speaking&&!callMuted)?' speaking':''); }
+      const isSpeaking = avg > 12;
+      const wrap = document.getElementById('call-av-wrap-me');
+      const st = document.getElementById('call-status-me');
+      if (wrap) {
+        wrap.classList.toggle('speaking', isSpeaking && !callMuted);
+        // Dynamic ring opacity based on volume
+        const rings = wrap.querySelectorAll('.call-participant-speaking-ring');
+        const vol = Math.min(avg / 80, 1);
+        if (rings[0]) rings[0].style.opacity = isSpeaking && !callMuted ? Math.min(vol * 2, 1) : 0;
+        if (rings[1]) rings[1].style.opacity = isSpeaking && !callMuted ? Math.min(vol * 1.4, 0.7) : 0;
+        if (rings[2]) rings[2].style.opacity = isSpeaking && !callMuted ? Math.min(vol, 0.4) : 0;
       }
+      if (st) { st.textContent = (isSpeaking && !callMuted) ? 'speaking...' : 'you'; st.className = 'call-participant-status' + ((isSpeaking&&!callMuted)?' speaking':''); }
+      speaking = isSpeaking;
     }
     tick();
   }
