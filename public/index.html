@@ -2550,9 +2550,9 @@ async function startCallWebRTC(peerUsername, isInitiator) {
       audio: {
         echoCancellation:    true,   // принудительно включаем AEC
         noiseSuppression:    { ideal: audioSettings.noise },
-        autoGainControl:     false,
-        googAutoGainControl: false,
-        googAutoGainControl2: false,
+        autoGainControl:     true,
+        googAutoGainControl: true,
+        googAutoGainControl2: true,
         googEchoCancellation: true,  // Chrome-специфичный флаг
         googHighpassFilter:  true,
         channelCount: { ideal: 1 },
@@ -2593,12 +2593,19 @@ async function startCallWebRTC(peerUsername, isInitiator) {
     }
     audio.muted = callSoundMuted;
     // Берём первый стрим если есть, иначе собираем из треков
-    if (e.streams && e.streams[0]) {
-      audio.srcObject = e.streams[0];
-    } else {
-      const ms = audio.srcObject || new MediaStream();
-      ms.addTrack(e.track);
-      audio.srcObject = ms;
+    const remoteStream = (e.streams && e.streams[0]) ? e.streams[0] : (() => { const ms = new MediaStream(); ms.addTrack(e.track); return ms; })();
+    // Усиливаем входящий звук через GainNode
+    try {
+      const remoteCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const source = remoteCtx.createMediaStreamSource(remoteStream);
+      const gain = remoteCtx.createGain();
+      gain.gain.value = 2.5; // усиление в 2.5 раза
+      const dest = remoteCtx.createMediaStreamDestination();
+      source.connect(gain);
+      gain.connect(dest);
+      audio.srcObject = dest.stream;
+    } catch(gainErr) {
+      audio.srcObject = remoteStream;
     }
     // Принудительно запускаем воспроизведение (нужно на некоторых браузерах ПК)
     audio.play().catch(() => {});
