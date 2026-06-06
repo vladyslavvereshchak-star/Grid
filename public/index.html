@@ -2717,6 +2717,7 @@ async function startCallWebRTC(peerUsername, isInitiator) {
   };
 
   callPc.ontrack = (e) => {
+    if (e.track.kind !== 'audio') return;
     let audio = document.getElementById('call-remote-audio');
     if (!audio) {
       audio = document.createElement('audio');
@@ -2727,23 +2728,26 @@ async function startCallWebRTC(peerUsername, isInitiator) {
       document.body.appendChild(audio);
     }
     audio.muted = callSoundMuted;
-    // Берём первый стрим если есть, иначе собираем из треков
-    const remoteStream = (e.streams && e.streams[0]) ? e.streams[0] : (() => { const ms = new MediaStream(); ms.addTrack(e.track); return ms; })();
-    // Усиливаем входящий звук через GainNode
-    try {
-      const remoteCtx = new (window.AudioContext || window.webkitAudioContext)();
-      const source = remoteCtx.createMediaStreamSource(remoteStream);
-      const gain = remoteCtx.createGain();
-      gain.gain.value = 2.5; // усиление в 2.5 раза
-      const dest = remoteCtx.createMediaStreamDestination();
-      source.connect(gain);
-      gain.connect(dest);
-      audio.srcObject = dest.stream;
-    } catch(gainErr) {
-      audio.srcObject = remoteStream;
+
+    // Берём стрим напрямую — без GainNode/AudioContext
+    // AudioContext создаётся в suspended состоянии без user gesture и глушит звук
+    const remoteStream = (e.streams && e.streams[0])
+      ? e.streams[0]
+      : (() => { const ms = new MediaStream(); ms.addTrack(e.track); return ms; })();
+
+    audio.srcObject = remoteStream;
+
+    // Убеждаемся что AudioContext (если есть) не suspended
+    if (callAudioCtx && callAudioCtx.state === 'suspended') {
+      callAudioCtx.resume().catch(() => {});
     }
-    // Принудительно запускаем воспроизведение (нужно на некоторых браузерах ПК)
-    audio.play().catch(() => {});
+
+    // Принудительно запускаем воспроизведение
+    const playPromise = audio.play();
+    if (playPromise) playPromise.catch(() => {
+      // Autoplay заблокирован — пробуем после любого клика
+      document.addEventListener('click', () => audio.play().catch(()=>{}), { once: true });
+    });
     applySinkId(audio);
   };
 
