@@ -1125,6 +1125,62 @@ input[type=range].ctx-slider::-webkit-slider-runnable-track{
   width:100%; height:100%; object-fit:cover; border-radius:0; display:block;
 }
 .tb-btn{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:5px;cursor:pointer;color:#2a3540;font-size:11px;transition:all .15s}.tb-btn:hover{background:rgba(255,255,255,.06);color:#5a7080}.tb-close:hover{background:rgba(255,68,102,.15)!important;color:#ff4466!important}body.electron{padding-top:32px}
+
+/* ══════════════════════════════════
+   VOICE PROFILE CARDS
+══════════════════════════════════ */
+.voice-profile-card {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 14px 10px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.2s cubic-bezier(0.34,1.56,0.64,1);
+  position: relative;
+  overflow: hidden;
+}
+.voice-profile-card:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-dim);
+  transform: translateY(-2px);
+}
+.voice-profile-card.active {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  box-shadow: var(--accent-glow);
+}
+.voice-profile-card.active::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 10px 10px 0 0;
+}
+.vp-icon {
+  font-size: 20px;
+  color: var(--text3);
+  margin-bottom: 8px;
+  transition: color 0.2s;
+}
+.voice-profile-card.active .vp-icon,
+.voice-profile-card:hover .vp-icon { color: var(--accent); }
+.vp-name {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text2);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.voice-profile-card.active .vp-name { color: var(--accent); }
+.vp-desc {
+  font-size: 9px;
+  color: var(--text3);
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+}
 </style>
 </head>
 <body>
@@ -1604,43 +1660,142 @@ input[type=range].ctx-slider::-webkit-slider-runnable-track{
         <div style="margin-top:12px;font-size:10px;color:var(--text3);letter-spacing:0.04em">Click a key badge to reassign</div>
       </div>
       <div class="pane" id="pane-voice">
-        <div class="modal-section-title">Voice & Audio</div>
-        <div style="margin-bottom:20px">
-          <div class="field-label">Input Device (Microphone)</div>
+
+        <!-- SECTION: Input Profile -->
+        <div class="modal-section-title" style="display:flex;align-items:center;gap:8px">
+          <i class="ti ti-microphone" style="color:var(--accent);font-size:13px"></i> INPUT PROFILE
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:20px">
+          <div class="voice-profile-card" id="vp-isolation" onclick="setVoiceProfile('isolation')">
+            <div class="vp-icon"><i class="ti ti-shield-check"></i></div>
+            <div class="vp-name">Isolation</div>
+            <div class="vp-desc">Voice only · max noise cut</div>
+          </div>
+          <div class="voice-profile-card" id="vp-studio" onclick="setVoiceProfile('studio')">
+            <div class="vp-icon"><i class="ti ti-broadcast"></i></div>
+            <div class="vp-name">Studio</div>
+            <div class="vp-desc">Clean · no processing</div>
+          </div>
+          <div class="voice-profile-card active" id="vp-custom" onclick="setVoiceProfile('custom')">
+            <div class="vp-icon"><i class="ti ti-adjustments-horizontal"></i></div>
+            <div class="vp-name">Custom</div>
+            <div class="vp-desc">Manual control</div>
+          </div>
+        </div>
+
+        <!-- SECTION: Devices -->
+        <div class="modal-section-title" style="display:flex;align-items:center;gap:8px;margin-top:4px">
+          <i class="ti ti-devices" style="color:var(--accent);font-size:13px"></i> DEVICES
+        </div>
+        <div style="margin-bottom:14px">
+          <div class="field-label">Microphone</div>
           <select class="field" id="voice-input-select" onchange="applyVoiceDevices()" style="cursor:pointer">
             <option value="">Default microphone</option>
           </select>
-          <div style="margin-top:8px;display:flex;align-items:center;gap:10px">
-            <div style="flex:1;height:6px;border-radius:3px;background:var(--border2);overflow:hidden">
-              <div id="mic-level-bar" style="height:100%;width:0%;background:var(--accent);border-radius:3px;transition:width 0.1s"></div>
+          <!-- Mic level visualizer -->
+          <div style="margin-top:10px;display:flex;align-items:center;gap:10px">
+            <div style="flex:1;height:4px;border-radius:2px;background:var(--border2);overflow:hidden;position:relative">
+              <div id="mic-level-bar" style="height:100%;width:0%;background:linear-gradient(90deg,var(--accent),#00ffcc);border-radius:2px;transition:width 0.08s"></div>
             </div>
-            <span style="font-size:10px;color:var(--text3);min-width:40px" id="mic-level-text">0%</span>
+            <span style="font-size:10px;color:var(--text3);min-width:32px;text-align:right" id="mic-level-text">0%</span>
           </div>
-          <div style="margin-top:6px;font-size:10px;color:var(--text3)">Speak to test your microphone level</div>
+          <div style="margin-top:5px;font-size:10px;color:var(--text3);letter-spacing:0.04em">Speak to test level</div>
         </div>
         <div style="margin-bottom:20px;padding-bottom:20px;border-bottom:1px solid var(--border)">
-          <div class="field-label">Output Device (Speakers/Headphones)</div>
+          <div class="field-label">Output (Speakers / Headphones)</div>
           <select class="field" id="voice-output-select" onchange="applyVoiceDevices()" style="cursor:pointer">
             <option value="">Default output</option>
           </select>
-          <div id="voice-output-hint" style="margin-top:6px;font-size:10px;color:var(--text3)">Changes apply to next call</div>
+          <div id="voice-output-hint" style="margin-top:5px;font-size:10px;color:var(--text3)">Changes apply to next call</div>
         </div>
-        <div style="margin-bottom:16px">
-          <div class="field-label">Audio Processing</div>
-          <div class="setting-row">
-            <div class="setting-label">Echo Cancellation</div>
-            <div class="toggle on" id="toggle-echo" onclick="toggleAudioSetting('echo',this)"></div>
+
+        <!-- SECTION: Processing (Custom only) -->
+        <div id="voice-custom-section">
+          <div class="modal-section-title" style="display:flex;align-items:center;gap:8px">
+            <i class="ti ti-waveform" style="color:var(--accent);font-size:13px"></i> PROCESSING
           </div>
-          <div class="setting-row">
-            <div class="setting-label">Noise Suppression</div>
-            <div class="toggle on" id="toggle-noise" onclick="toggleAudioSetting('noise',this)"></div>
+          <div style="margin-bottom:16px">
+            <div class="setting-row" style="padding:10px 0">
+              <div>
+                <div class="setting-label">Echo Cancellation</div>
+                <div style="font-size:10px;color:var(--text3);margin-top:2px">Removes your speaker sound from mic</div>
+              </div>
+              <div class="toggle on" id="toggle-echo" onclick="toggleAudioSetting('echo',this)"></div>
+            </div>
+            <div class="setting-row" style="padding:10px 0;border-top:1px solid var(--border)">
+              <div>
+                <div class="setting-label">Noise Suppression</div>
+                <div style="font-size:10px;color:var(--text3);margin-top:2px">Removes background noise & fans</div>
+              </div>
+              <div class="toggle on" id="toggle-noise" onclick="toggleAudioSetting('noise',this)"></div>
+            </div>
+            <div class="setting-row" style="padding:10px 0;border-top:1px solid var(--border)">
+              <div>
+                <div class="setting-label">Auto Gain Control</div>
+                <div style="font-size:10px;color:var(--text3);margin-top:2px">Automatically adjusts mic volume</div>
+              </div>
+              <div class="toggle on" id="toggle-gain" onclick="toggleAudioSetting('gain',this)"></div>
+            </div>
           </div>
-          <div class="setting-row">
-            <div class="setting-label">Auto Gain Control</div>
-            <div class="toggle on" id="toggle-gain" onclick="toggleAudioSetting('gain',this)"></div>
+
+          <!-- Noise Gate -->
+          <div style="padding:14px;background:rgba(0,229,255,0.03);border:1px solid var(--border2);border-radius:8px;margin-bottom:16px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+              <div>
+                <div class="setting-label" style="display:flex;align-items:center;gap:6px">
+                  <i class="ti ti-filter" style="color:var(--accent);font-size:12px"></i> Noise Gate
+                </div>
+                <div style="font-size:10px;color:var(--text3);margin-top:2px">Mutes mic below threshold · kills fan noise</div>
+              </div>
+              <div class="toggle" id="toggle-noisegate" onclick="toggleNoiseGate(this)"></div>
+            </div>
+            <div id="noisegate-controls" style="opacity:0.4;pointer-events:none;transition:opacity 0.2s">
+              <div style="display:flex;align-items:center;gap:10px">
+                <span style="font-size:10px;color:var(--text3);min-width:20px">0</span>
+                <input type="range" class="ctx-slider" id="noisegate-threshold" min="0" max="100" value="15" step="1"
+                  style="flex:1" oninput="updateNoiseGateThreshold(this.value)">
+                <span style="font-size:10px;color:var(--accent);min-width:36px;text-align:right" id="noisegate-val">15%</span>
+              </div>
+              <div style="font-size:10px;color:var(--text3);margin-top:5px">Higher = more aggressive · cuts more background</div>
+            </div>
+          </div>
+
+          <!-- Input Volume -->
+          <div style="padding:14px;background:rgba(0,229,255,0.03);border:1px solid var(--border2);border-radius:8px;margin-bottom:16px">
+            <div style="margin-bottom:10px">
+              <div class="setting-label" style="display:flex;align-items:center;gap:6px">
+                <i class="ti ti-microphone-2" style="color:var(--accent);font-size:12px"></i> Input Sensitivity
+              </div>
+              <div style="font-size:10px;color:var(--text3);margin-top:2px">Boost your mic volume</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="font-size:10px;color:var(--text3);min-width:20px">0%</span>
+              <input type="range" class="ctx-slider" id="input-gain-slider" min="0" max="300" value="100" step="5"
+                style="flex:1" oninput="updateInputGain(this.value)">
+              <span style="font-size:10px;color:var(--accent);min-width:40px;text-align:right" id="input-gain-val">100%</span>
+            </div>
+          </div>
+
+          <!-- Output Volume -->
+          <div style="padding:14px;background:rgba(0,229,255,0.03);border:1px solid var(--border2);border-radius:8px;margin-bottom:20px">
+            <div style="margin-bottom:10px">
+              <div class="setting-label" style="display:flex;align-items:center;gap:6px">
+                <i class="ti ti-volume" style="color:var(--accent);font-size:12px"></i> Incoming Volume
+              </div>
+              <div style="font-size:10px;color:var(--text3);margin-top:2px">Boost volume of people calling you</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="font-size:10px;color:var(--text3);min-width:20px">0%</span>
+              <input type="range" class="ctx-slider" id="output-gain-slider" min="0" max="400" value="200" step="10"
+                style="flex:1" oninput="updateOutputGain(this.value)">
+              <span style="font-size:10px;color:var(--accent);min-width:40px;text-align:right" id="output-gain-val">200%</span>
+            </div>
           </div>
         </div>
-        <button class="lang-btn active" onclick="refreshDeviceList()">↻ Refresh Devices</button>
+
+        <button class="lang-btn active" onclick="refreshDeviceList()" style="width:100%;justify-content:center">
+          <i class="ti ti-refresh"></i> Refresh Devices
+        </button>
       </div>
       <div class="pane" id="pane-messages">
         <div class="modal-section-title">Messages</div>
@@ -2736,14 +2891,15 @@ async function startCallWebRTC(peerUsername, isInitiator) {
       ? e.streams[0]
       : (() => { const ms = new MediaStream(); ms.addTrack(e.track); return ms; })();
 
-    // Усиливаем звук через GainNode — но только после resume() чтобы не suspended
+    // Усиливаем звук через GainNode с настраиваемым outputGainValue
     try {
       if (callAudioCtx) { callAudioCtx.close().catch(()=>{}); callAudioCtx = null; }
       callAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
       const doConnect = () => {
         const source = callAudioCtx.createMediaStreamSource(remoteStream);
         const gain   = callAudioCtx.createGain();
-        gain.gain.value = 2.0;
+        gain.gain.value = (typeof outputGainValue !== 'undefined' ? outputGainValue : 200) / 100;
+        callOutputGainNode = gain; // сохраняем для live-изменения
         const dest = callAudioCtx.createMediaStreamDestination();
         source.connect(gain);
         gain.connect(dest);
@@ -4520,4 +4676,130 @@ if (window.electronAPI) {
 } else {
   window.toggleMaximize = function() {};
 }
+
+// ══════════════════════════════════════
+//  VOICE SETTINGS — profiles, noise gate, gain
+// ══════════════════════════════════════
+let noiseGateEnabled   = localStorage.getItem('grid_noisegate') === 'true';
+let noiseGateThreshold = parseInt(localStorage.getItem('grid_noisegate_threshold') || '15');
+let inputGainValue     = parseInt(localStorage.getItem('grid_input_gain') || '100');
+let outputGainValue    = parseInt(localStorage.getItem('grid_output_gain') || '200');
+let callOutputGainNode = null; // GainNode для входящего звука (обновляется при звонке)
+let voiceProfile       = localStorage.getItem('grid_voice_profile') || 'custom';
+
+function setVoiceProfile(profile) {
+  voiceProfile = profile;
+  localStorage.setItem('grid_voice_profile', profile);
+  document.querySelectorAll('.voice-profile-card').forEach(c => c.classList.remove('active'));
+  const card = document.getElementById('vp-' + profile);
+  if (card) card.classList.add('active');
+
+  const customSection = document.getElementById('voice-custom-section');
+
+  if (profile === 'isolation') {
+    // Max noise suppression, echo cancel, gain on — hide custom controls
+    audioSettings.echo  = true;
+    audioSettings.noise = true;
+    audioSettings.gain  = true;
+    noiseGateEnabled    = true;
+    noiseGateThreshold  = 25;
+    inputGainValue      = 100;
+    outputGainValue     = 200;
+    if (customSection) customSection.style.display = 'none';
+    showNotif('Profile: Voice Isolation', 'blue');
+  } else if (profile === 'studio') {
+    // No processing at all
+    audioSettings.echo  = false;
+    audioSettings.noise = false;
+    audioSettings.gain  = false;
+    noiseGateEnabled    = false;
+    if (customSection) customSection.style.display = 'none';
+    showNotif('Profile: Studio (raw)', 'blue');
+  } else {
+    // Custom — show controls
+    if (customSection) customSection.style.display = '';
+    showNotif('Profile: Custom', 'blue');
+  }
+
+  // Save audio settings
+  ['echo','noise','gain'].forEach(k => {
+    localStorage.setItem('grid_' + k, audioSettings[k]);
+    const el = document.getElementById('toggle-' + k);
+    if (el) el.classList.toggle('on', audioSettings[k]);
+  });
+  syncNoiseGateUI();
+}
+
+function toggleNoiseGate(el) {
+  noiseGateEnabled = !noiseGateEnabled;
+  el.classList.toggle('on', noiseGateEnabled);
+  localStorage.setItem('grid_noisegate', noiseGateEnabled);
+  const controls = document.getElementById('noisegate-controls');
+  if (controls) {
+    controls.style.opacity = noiseGateEnabled ? '1' : '0.4';
+    controls.style.pointerEvents = noiseGateEnabled ? '' : 'none';
+  }
+  showNotif('Noise Gate ' + (noiseGateEnabled ? 'ON' : 'OFF'));
+}
+
+function updateNoiseGateThreshold(val) {
+  noiseGateThreshold = parseInt(val);
+  localStorage.setItem('grid_noisegate_threshold', noiseGateThreshold);
+  const el = document.getElementById('noisegate-val');
+  if (el) el.textContent = noiseGateThreshold + '%';
+}
+
+function updateInputGain(val) {
+  inputGainValue = parseInt(val);
+  localStorage.setItem('grid_input_gain', inputGainValue);
+  const el = document.getElementById('input-gain-val');
+  if (el) el.textContent = inputGainValue + '%';
+}
+
+function updateOutputGain(val) {
+  outputGainValue = parseInt(val);
+  localStorage.setItem('grid_output_gain', outputGainValue);
+  const el = document.getElementById('output-gain-val');
+  if (el) el.textContent = outputGainValue + '%';
+  // Применяем сразу если есть активный звонок
+  if (callOutputGainNode) callOutputGainNode.gain.value = outputGainValue / 100;
+}
+
+function syncNoiseGateUI() {
+  const toggle = document.getElementById('toggle-noisegate');
+  if (toggle) toggle.classList.toggle('on', noiseGateEnabled);
+  const controls = document.getElementById('noisegate-controls');
+  if (controls) {
+    controls.style.opacity = noiseGateEnabled ? '1' : '0.4';
+    controls.style.pointerEvents = noiseGateEnabled ? '' : 'none';
+  }
+  const slider = document.getElementById('noisegate-threshold');
+  if (slider) slider.value = noiseGateThreshold;
+  const val = document.getElementById('noisegate-val');
+  if (val) val.textContent = noiseGateThreshold + '%';
+  const inSlider = document.getElementById('input-gain-slider');
+  if (inSlider) inSlider.value = inputGainValue;
+  const inVal = document.getElementById('input-gain-val');
+  if (inVal) inVal.textContent = inputGainValue + '%';
+  const outSlider = document.getElementById('output-gain-slider');
+  if (outSlider) outSlider.value = outputGainValue;
+  const outVal = document.getElementById('output-gain-val');
+  if (outVal) outVal.textContent = outputGainValue + '%';
+}
+
+// Init voice settings UI on modal open
+const _origOpenModal = window.openModal;
+window.openModal = function() {
+  _origOpenModal && _origOpenModal();
+  setTimeout(() => {
+    // Profile cards
+    document.querySelectorAll('.voice-profile-card').forEach(c => c.classList.remove('active'));
+    const activeCard = document.getElementById('vp-' + voiceProfile);
+    if (activeCard) activeCard.classList.add('active');
+    const customSection = document.getElementById('voice-custom-section');
+    if (customSection) customSection.style.display = (voiceProfile === 'custom') ? '' : 'none';
+    syncNoiseGateUI();
+  }, 50);
+};
+
 </script>
