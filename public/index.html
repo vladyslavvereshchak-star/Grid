@@ -1763,6 +1763,10 @@ const ICE_CONFIG = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
     {
       urls: 'turn:openrelay.metered.ca:80',
       username: 'openrelayproject',
@@ -2764,7 +2768,18 @@ async function startCallWebRTC(peerUsername, isInitiator) {
 }
 
 async function handleCallOffer(data) {
-  if (!callPc) return;
+  // Race condition fix: callee может получить offer до того как startCallWebRTC создаст callPc
+  // Ждём до 3 секунд пока callPc не появится
+  if (!callPc) {
+    let waited = 0;
+    await new Promise(resolve => {
+      const check = setInterval(() => {
+        waited += 50;
+        if (callPc || waited >= 3000) { clearInterval(check); resolve(); }
+      }, 50);
+    });
+  }
+  if (!callPc) { console.warn('handleCallOffer: callPc still null'); return; }
   try {
     await callPc.setRemoteDescription(new RTCSessionDescription(data.sdp));
     // Применяем буферизованные ICE кандидаты
@@ -3761,7 +3776,21 @@ function applyUIZoom(pct) {
 (function() {
   document.documentElement.style.zoom = '';
   const saved = localStorage.getItem('grid_ui_zoom');
-  if (saved) applyUIZoom(parseInt(saved));
+  if (!saved) return;
+  // Если Electron — ждём инжекта тайтлбара (он добавляет margin-top: 32px)
+  // чтобы tbH = 32 считался правильно при вычислении высоты
+  if (window.electronAPI) {
+    const tryApply = () => {
+      if (document.getElementById('__grid_titlebar')) {
+        applyUIZoom(parseInt(saved));
+      } else {
+        requestAnimationFrame(tryApply);
+      }
+    };
+    requestAnimationFrame(tryApply);
+  } else {
+    applyUIZoom(parseInt(saved));
+  }
 })();
 
 document.getElementById('username-input').focus();

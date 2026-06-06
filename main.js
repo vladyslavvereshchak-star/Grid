@@ -1,6 +1,26 @@
 const { app, BrowserWindow, Tray, Menu, Notification, ipcMain, globalShortcut, shell, dialog } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
+
+// ── Зум — сохранение/загрузка ──
+function getZoomConfigPath() {
+  return path.join(app.getPath('userData'), 'grid-settings.json');
+}
+function loadZoomFactor() {
+  try {
+    const data = JSON.parse(fs.readFileSync(getZoomConfigPath(), 'utf8'));
+    return typeof data.zoomFactor === 'number' ? data.zoomFactor : 1.0;
+  } catch { return 1.0; }
+}
+function saveZoomFactor(factor) {
+  try {
+    let data = {};
+    try { data = JSON.parse(fs.readFileSync(getZoomConfigPath(), 'utf8')); } catch {}
+    data.zoomFactor = factor;
+    fs.writeFileSync(getZoomConfigPath(), JSON.stringify(data), 'utf8');
+  } catch (e) { console.error('Failed to save zoom:', e); }
+}
 
 // ── Auto Updater настройка ──
 autoUpdater.autoDownload = true;        // качать автоматически в фоне
@@ -184,6 +204,9 @@ function createWindow() {
 
   mainWindow.webContents.on('did-finish-load', () => {
     injectTitlebar();
+    // Восстанавливаем зум
+    const zoom = loadZoomFactor();
+    mainWindow.webContents.setZoomFactor(zoom);
   });
 
   mainWindow.once('ready-to-show', () => {
@@ -240,6 +263,13 @@ function createTray() {
     mainWindow.isVisible() ? mainWindow.focus() : mainWindow.show();
   });
 }
+
+// IPC — зум
+ipcMain.on('set-zoom', (e, factor) => {
+  if (mainWindow) mainWindow.webContents.setZoomFactor(factor);
+  saveZoomFactor(factor);
+});
+ipcMain.on('get-zoom', (e) => { e.returnValue = loadZoomFactor(); });
 
 // IPC — окно
 ipcMain.on('win-minimize', () => mainWindow?.minimize());

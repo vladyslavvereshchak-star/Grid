@@ -16,4 +16,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onUpdateStatus: (cb) => ipcRenderer.on('update-status', (e, data) => cb(data)),
   // Версия приложения
   getVersion: () => require('electron').app ? require('electron').app.getVersion() : ipcRenderer.sendSync('get-version'),
+
+  // Зум
+  setZoom: (factor) => ipcRenderer.send('set-zoom', factor),
+  getZoom: () => ipcRenderer.sendSync('get-zoom'),
 });
