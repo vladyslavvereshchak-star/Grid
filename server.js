@@ -506,6 +506,24 @@ wss.on('connection', (ws, req) => {
         }
         break;
       }
+
+      case 'read_receipt': {
+        const targetWs = findWsByUsername(data.to);
+        if (targetWs) sendTo(targetWs, { type:'read_receipt', msgId: data.msgId });
+        break;
+      }
+
+      case 'reaction': {
+        // Broadcast to channel or DM peer
+        const reactionMsg = { ...data, from: user.username };
+        if (data.dm && data.to) {
+          const targetWs = findWsByUsername(data.to);
+          if (targetWs) sendTo(targetWs, reactionMsg);
+        } else {
+          broadcast(reactionMsg, ws);
+        }
+        break;
+      }
     }
   });
 
