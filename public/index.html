@@ -569,15 +569,185 @@ body.electron .app{height:calc(100vh - 32px)}
 .u-btn.is-friend:hover{color:var(--red);border-color:#3a1a1a;background:#1a0a10}
 
 /* ══════════════════════════════════
-   CALL MODAL — новый двойной интерфейс
+   CALL BAR — Discord-style inline
 ══════════════════════════════════ */
-#call-overlay{
-  position:fixed;inset:0;background:rgba(0,0,0,0);
-  display:none;align-items:center;justify-content:center;
-  z-index:250;flex-direction:column;gap:0;
-  transition:background 0.4s ease;
+#call-overlay{ display:none }
+#call-overlay.active{ display:none }
+
+/* ── Main call panel embedded above chat ── */
+#call-inline-bar{
+  display:none;
+  flex-shrink:0;
+  flex-direction:column;
+  background:linear-gradient(180deg,#0a1215 0%,#080d0f 100%);
+  border-bottom:1px solid rgba(0,229,255,0.12);
+  position:relative;
+  overflow:hidden;
 }
-#call-overlay.active{display:flex;background:rgba(0,0,0,0.72)}
+#call-inline-bar::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(0,229,255,0.3),rgba(192,132,252,0.2),transparent);
+}
+#call-inline-bar.active{ display:flex }
+
+/* ── Top row: status + timer + controls ── */
+.cbar-header{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 16px 8px;
+}
+.cbar-signal{
+  display:flex;gap:3px;align-items:flex-end;flex-shrink:0;
+}
+.cbar-signal-bar{
+  width:3px;border-radius:2px;background:var(--accent);
+  opacity:0.3;transition:all 0.3s;
+}
+.cbar-signal-bar:nth-child(1){ height:6px }
+.cbar-signal-bar:nth-child(2){ height:9px }
+.cbar-signal-bar:nth-child(3){ height:12px }
+.cbar-signal-bar:nth-child(4){ height:15px }
+#call-inline-bar.active .cbar-signal-bar{ opacity:1 }
+#call-inline-bar.ringing .cbar-signal-bar:nth-child(3),
+#call-inline-bar.ringing .cbar-signal-bar:nth-child(4){ opacity:0.2 }
+
+.cbar-status-col{ flex:1;min-width:0 }
+.cbar-status-label{
+  font-size:9px;letter-spacing:0.12em;text-transform:uppercase;font-weight:700;
+  color:var(--accent);line-height:1;margin-bottom:3px;
+}
+.cbar-status-label.ringing{ color:var(--amber) }
+.cbar-status-label.solo{ color:var(--text3) }
+.cbar-peer-name{
+  font-size:13px;font-weight:700;color:var(--text);
+  letter-spacing:0.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.cbar-timer{
+  font-size:11px;color:var(--text2);letter-spacing:0.1em;
+  font-family:'JetBrains Mono',monospace;flex-shrink:0;min-width:44px;text-align:right;
+}
+
+/* ── Participant avatars row ── */
+.cbar-participants{
+  display:flex;align-items:center;gap:12px;
+  padding:0 16px 10px;
+}
+.cbar-participant{
+  display:flex;flex-direction:column;align-items:center;gap:5px;
+  position:relative;
+}
+.cbar-av-wrap{
+  width:40px;height:40px;border-radius:10px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:16px;font-weight:700;flex-shrink:0;
+  border:1.5px solid var(--border2);
+  position:relative;transition:all 0.25s;
+}
+.cbar-av-wrap.speaking{
+  border-color:var(--accent);
+  box-shadow:0 0 0 2px rgba(0,229,255,0.25),0 0 14px rgba(0,229,255,0.2);
+}
+.cbar-av-wrap.muted::after{
+  content:'';position:absolute;bottom:-4px;right:-4px;
+  width:14px;height:14px;border-radius:50%;
+  background:var(--red);border:2px solid #080d0f;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.5'%3E%3Cline x1='1' y1='1' x2='23' y2='23'/%3E%3Cpath d='M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6'/%3E%3Cpath d='M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23'/%3E%3Cline x1='12' y1='19' x2='12' y2='23'/%3E%3Cline x1='8' y1='23' x2='16' y2='23'/%3E%3C/svg%3E");
+  background-size:8px;background-repeat:no-repeat;background-position:center;
+}
+.cbar-av-name{
+  font-size:9px;color:var(--text3);letter-spacing:0.04em;
+  text-align:center;max-width:52px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.cbar-connector{
+  display:flex;align-items:center;gap:3px;align-self:center;margin-bottom:14px;
+}
+.cbar-connector-dot{
+  width:3px;height:3px;border-radius:50%;
+  background:var(--accent);opacity:0.4;
+}
+.cbar-connector-line{
+  width:20px;height:1px;
+  background:linear-gradient(90deg,rgba(0,229,255,0.15),rgba(0,229,255,0.4),rgba(0,229,255,0.15));
+}
+
+/* ── Controls row ── */
+.cbar-controls{
+  display:flex;align-items:center;gap:6px;
+  padding:0 12px 10px;
+}
+.cbar-btn{
+  display:flex;align-items:center;justify-content:center;gap:5px;
+  height:30px;padding:0 10px;border-radius:7px;
+  border:1px solid var(--border2);
+  background:rgba(255,255,255,0.02);
+  color:var(--text3);font-size:10px;cursor:pointer;
+  font-family:'JetBrains Mono',monospace;
+  letter-spacing:0.06em;text-transform:uppercase;
+  transition:all 0.18s cubic-bezier(0.34,1.56,0.64,1);
+  flex-shrink:0;
+}
+.cbar-btn i{ font-size:13px }
+.cbar-btn:hover{ background:rgba(255,255,255,0.06);color:var(--text);transform:scale(1.05) }
+.cbar-btn.active{ background:var(--accent-dim);border-color:var(--accent-border);color:var(--accent) }
+.cbar-btn.muted{ background:rgba(255,68,102,0.07);border-color:rgba(255,68,102,0.25);color:var(--red) }
+.cbar-btn-icon{
+  width:30px;height:30px;border-radius:7px;padding:0;
+  display:flex;align-items:center;justify-content:center;
+  border:1px solid var(--border2);background:rgba(255,255,255,0.02);
+  color:var(--text3);cursor:pointer;transition:all 0.18s cubic-bezier(0.34,1.56,0.64,1);
+  flex-shrink:0;
+}
+.cbar-btn-icon i{ font-size:13px }
+.cbar-btn-icon:hover{ background:rgba(255,255,255,0.06);color:var(--text);transform:scale(1.08) }
+.cbar-btn-icon.muted{ background:rgba(255,68,102,0.07);border-color:rgba(255,68,102,0.25);color:var(--red) }
+.cbar-spacer{ flex:1 }
+.cbar-end-btn{
+  display:flex;align-items:center;gap:5px;
+  height:30px;padding:0 12px;border-radius:7px;
+  background:rgba(255,68,102,0.1);border:1px solid rgba(255,68,102,0.28);
+  color:var(--red);font-size:10px;cursor:pointer;
+  font-family:'JetBrains Mono',monospace;letter-spacing:0.06em;text-transform:uppercase;
+  transition:all 0.18s;flex-shrink:0;
+}
+.cbar-end-btn i{ font-size:13px }
+.cbar-end-btn:hover{ background:rgba(255,68,102,0.2);box-shadow:0 0 14px rgba(255,68,102,0.2) }
+
+/* ── Volume sliders ── */
+.cbar-volumes{
+  display:flex;gap:14px;padding:6px 16px 10px;
+  border-top:1px solid var(--border);
+}
+.cbar-vol-item{
+  display:flex;align-items:center;gap:8px;flex:1;
+}
+.cbar-vol-label{font-size:9px;color:var(--text3);letter-spacing:0.08em;text-transform:uppercase;min-width:22px;text-align:right;flex-shrink:0}
+.cbar-vol-val{font-size:9px;color:var(--accent);min-width:30px;text-align:right;flex-shrink:0}
+
+/* ── Solo / timeout bar ── */
+.cbar-solo-bar{
+  height:2px;background:var(--border2);margin:0;overflow:hidden;
+  display:none;
+}
+.cbar-solo-bar.active{ display:block }
+.cbar-solo-fill{
+  height:100%;background:linear-gradient(90deg,var(--amber),rgba(255,170,51,0.3));
+  width:100%;transition:width 30s linear;
+}
+.cbar-solo-hint{
+  display:none;padding:5px 16px;
+  font-size:9px;color:var(--amber);letter-spacing:0.08em;
+  text-transform:uppercase;border-top:1px solid rgba(255,170,51,0.1);
+}
+.cbar-solo-hint.active{ display:block }
+
+/* Legacy compat aliases */
+.call-bar-pulse{ display:none }
+.call-bar-status{ display:none }
+.call-bar-name{ display:none }
+.call-bar-timer{ display:none }
+.call-bar-members{ display:none }
+.call-bar-controls{ display:none }
+.call-bar-volumes{ display:none }
+.call-bar-solo-bar{ display:none }
 
 .call-card{
   background:linear-gradient(180deg,#141518 0%,#0f1011 100%);
@@ -589,7 +759,6 @@ body.electron .app{height:calc(100vh - 32px)}
   transition:transform 0.4s var(--ease),opacity 0.4s ease;
   position:relative;z-index:1;
 }
-#call-overlay.active .call-card{transform:translateY(0);opacity:1}
 
 /* ── DUAL PARTICIPANT CARDS ── */
 .call-participants{
@@ -1013,88 +1182,140 @@ input[type=range]:focus{outline:none}
 .dock-logo.dm-active{background:var(--accent-dim)}
 
 /* ══════════════════════════════════
-   INCOMING CALL OVERLAY
+   INCOMING CALL OVERLAY — modern popup
 ══════════════════════════════════ */
 #incoming-call-overlay{
-  position:fixed;bottom:28px;right:28px;
-  background:transparent;
-  display:none;align-items:flex-end;justify-content:flex-end;
-  z-index:255;flex-direction:column;
-  pointer-events:none;
+  position:fixed;bottom:24px;left:calc(var(--dock-w) + 12px);
+  z-index:500;pointer-events:none;opacity:0;
+  transform:translateY(16px);
+  transition:opacity 0.25s ease,transform 0.25s ease;
 }
-#incoming-call-overlay.active{display:flex;pointer-events:all}
-#incoming-call-overlay .call-card{
-  padding:28px 32px 24px;
-  border:1px solid rgba(0,229,255,0.22);
-  box-shadow:
-    0 0 0 1px rgba(0,229,255,0.08),
-    0 8px 32px rgba(0,0,0,0.75),
-    0 24px 64px rgba(0,0,0,0.65),
-    -8px 0 48px rgba(0,0,0,0.5),
-    0 0 80px rgba(0,229,255,0.07);
-  min-width:260px;
+#incoming-call-overlay.active{
+  pointer-events:all;opacity:1;transform:translateY(0);
 }
-@keyframes slideUpIn{
-  from{transform:translateY(32px);opacity:0}
-  to{transform:translateY(0);opacity:1}
+.incoming-call-card{
+  background:#1e2124;
+  border:1px solid rgba(255,255,255,0.08);
+  border-radius:8px;
+  padding:16px;
+  width:280px;
+  box-shadow:0 8px 32px rgba(0,0,0,0.6);
 }
-#incoming-call-overlay.active .call-card{
-  animation:slideUpIn 0.35s var(--ease) forwards;
+.incoming-call-top{
+  display:flex;align-items:center;gap:12px;margin-bottom:14px;
 }
-
+.incoming-call-av-wrap{
+  position:relative;flex-shrink:0;
+}
+.incoming-call-ring{
+  position:absolute;inset:-4px;border-radius:50%;
+  border:2px solid rgba(0,229,255,0.4);
+  animation:incomingRing 1.6s ease-out infinite;
+}
+@keyframes incomingRing{
+  0%{transform:scale(1);opacity:0.6}
+  100%{transform:scale(1.5);opacity:0}
+}
+.incoming-call-av{
+  width:40px;height:40px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:16px;font-weight:700;position:relative;z-index:1;
+}
+.incoming-call-info{ flex:1;min-width:0 }
+.incoming-call-label{
+  font-size:9px;color:var(--accent);letter-spacing:0.1em;
+  text-transform:uppercase;margin-bottom:3px;font-weight:700;
+}
+.incoming-call-name{
+  font-size:14px;font-weight:700;color:#fff;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.incoming-call-sub{
+  font-size:10px;color:#72767d;margin-top:2px;
+}
+.incoming-call-btns{
+  display:flex;gap:8px;
+}
 .call-accept-btn{
-  display:flex;align-items:center;gap:6px;
-  background:rgba(0,229,255,0.1);border:1px solid var(--accent-border);
-  border-radius:10px;padding:10px 22px;cursor:pointer;
-  font-size:12px;font-weight:700;color:var(--accent);
-  font-family:'JetBrains Mono',monospace;letter-spacing:0.06em;
-  transition:all 0.2s;
+  flex:1;display:flex;align-items:center;justify-content:center;gap:6px;
+  height:36px;border-radius:4px;
+  background:#3ba55c;color:#fff;
+  font-size:12px;font-weight:700;cursor:pointer;
+  transition:background 0.15s;font-family:'JetBrains Mono',monospace;
+  letter-spacing:0.04em;
 }
-.call-accept-btn:hover{background:rgba(0,229,255,0.2);box-shadow:var(--accent-glow)}
-
+.call-accept-btn:hover{background:#2d7d46}
 .call-decline-btn{
-  display:flex;align-items:center;gap:6px;
-  background:rgba(255,68,102,0.08);border:1px solid rgba(255,68,102,0.25);
-  border-radius:10px;padding:10px 22px;cursor:pointer;
-  font-size:12px;font-weight:700;color:var(--red);
-  font-family:'JetBrains Mono',monospace;letter-spacing:0.06em;
-  transition:all 0.2s;
+  flex:1;display:flex;align-items:center;justify-content:center;gap:6px;
+  height:36px;border-radius:4px;
+  background:#ed4245;color:#fff;
+  font-size:12px;font-weight:700;cursor:pointer;
+  transition:background 0.15s;font-family:'JetBrains Mono',monospace;
+  letter-spacing:0.04em;
 }
-.call-decline-btn:hover{background:rgba(255,68,102,0.18)}
+.call-decline-btn:hover{background:#c03537}
+.incoming-timeout-track{
+  height:2px;background:rgba(255,255,255,0.06);border-radius:2px;
+  margin-top:12px;overflow:hidden;
+}
+.incoming-timeout-fill-new{
+  height:100%;background:var(--accent);border-radius:2px;
+  width:100%;transition:width 30s linear;
+}
 
 /* ── CHAT CALL WIDGET (posted in channel after 30s) ── */
+/* ── CALL WIDGET in chat ── */
+/* ── CHAT CALL WIDGET — embedded in message list ── */
 .chat-call-widget{
-  display:flex;align-items:center;gap:12px;
-  background:linear-gradient(135deg,rgba(0,229,255,0.06),rgba(0,229,255,0.02));
-  border:1px solid var(--accent-border);border-radius:8px;
-  padding:10px 14px;margin:6px 8px;cursor:pointer;
-  transition:all 0.2s;position:relative;overflow:hidden;
+  display:flex;flex-direction:column;
+  background:linear-gradient(135deg,rgba(0,229,255,0.04) 0%,rgba(0,15,20,0.6) 100%);
+  border:1px solid rgba(0,229,255,0.14);border-radius:12px;
+  margin:6px 8px;overflow:hidden;
+  transition:all 0.2s;position:relative;
 }
 .chat-call-widget::before{
-  content:'';position:absolute;inset:0;
-  background:linear-gradient(90deg,transparent,rgba(0,229,255,0.04),transparent);
-  animation:widgetScan 3s linear infinite;
+  content:'';position:absolute;left:0;top:0;bottom:0;
+  width:2px;background:linear-gradient(180deg,var(--accent),rgba(0,229,255,0.2));
 }
-@keyframes widgetScan{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
-.chat-call-widget:hover{background:rgba(0,229,255,0.1);box-shadow:var(--accent-glow)}
-.widget-pulse{
-  width:8px;height:8px;border-radius:50%;background:var(--accent);flex-shrink:0;
-  animation:widgetPulse 1.5s ease-in-out infinite;
+.chat-call-widget:not(.ended):hover{background:linear-gradient(135deg,rgba(0,229,255,0.07) 0%,rgba(0,15,20,0.7) 100%)}
+.widget-main-row{
+  display:flex;align-items:center;gap:0;padding:0;
 }
-@keyframesWidgetPulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(0,229,255,0.4)}50%{opacity:0.7;box-shadow:0 0 0 5px rgba(0,229,255,0)}}
-@keyframes widgetPulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(0,229,255,0.4)}50%{opacity:0.7;box-shadow:0 0 0 5px rgba(0,229,255,0)}}
-.widget-text{flex:1;min-width:0}
-.widget-title{font-size:11px;font-weight:700;color:var(--accent);letter-spacing:0.06em}
-.widget-sub{font-size:10px;color:var(--text3);letter-spacing:0.04em;margin-top:1px}
+.widget-icon-col{
+  width:52px;display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;padding:14px 0;
+}
+.widget-phone-ico{
+  width:34px;height:34px;border-radius:9px;
+  background:var(--accent-dim);border:1px solid var(--accent-border);
+  display:flex;align-items:center;justify-content:center;
+  font-size:15px;color:var(--accent);
+  animation:widgetPhonePulse 2s ease-in-out infinite;
+}
+@keyframes widgetPhonePulse{0%,100%{box-shadow:0 0 0 0 rgba(0,229,255,0.4)}50%{box-shadow:0 0 0 5px rgba(0,229,255,0)}}
+.widget-text{flex:1;min-width:0;padding:13px 0}
+.widget-title{font-size:12px;font-weight:700;color:var(--text);letter-spacing:0.04em}
+.widget-sub{font-size:10px;color:var(--text3);letter-spacing:0.04em;margin-top:4px;display:flex;align-items:center;gap:6px}
+.widget-dot{width:5px;height:5px;border-radius:50%;background:var(--accent);display:inline-block;animation:widgetPulse 1.5s ease-in-out infinite;flex-shrink:0}
+.widget-pulse{display:none}
+@keyframes widgetPulse{0%,100%{opacity:1}50%{opacity:0.3}}
+.widget-timer{font-size:10px;color:var(--accent);letter-spacing:0.08em;font-family:'JetBrains Mono',monospace}
+.widget-actions{display:flex;gap:6px;align-items:center;padding:0 12px;flex-shrink:0}
 .widget-join-btn{
   background:var(--accent-dim);border:1px solid var(--accent-border);
-  border-radius:5px;color:var(--accent);font-size:10px;font-weight:700;
-  padding:4px 12px;cursor:pointer;font-family:'JetBrains Mono',monospace;
-  letter-spacing:0.06em;transition:all 0.15s;white-space:nowrap;flex-shrink:0;
+  border-radius:7px;color:var(--accent);font-size:10px;font-weight:700;
+  padding:7px 14px;cursor:pointer;font-family:'JetBrains Mono',monospace;
+  letter-spacing:0.07em;transition:all 0.18s cubic-bezier(0.34,1.56,0.64,1);
+  white-space:nowrap;flex-shrink:0;text-transform:uppercase;
 }
-.widget-join-btn:hover{background:rgba(0,229,255,0.18)}
-.chat-call-widget.ended{border-color:var(--border2);opacity:0.5;pointer-events:none}
-.chat-call-widget.ended .widget-pulse{background:var(--text3);animation:none}
+.widget-join-btn:hover{background:rgba(0,229,255,0.16);transform:scale(1.05);box-shadow:0 0 12px rgba(0,229,255,0.15)}
+.widget-timeout-bar{height:2px;background:var(--border2);overflow:hidden;}
+.widget-timeout-fill{height:100%;background:linear-gradient(90deg,var(--accent),rgba(0,229,255,0.25));width:100%;transition:width 30s linear}
+.chat-call-widget.ended{ border-color:var(--border2);background:rgba(255,255,255,0.01) }
+.chat-call-widget.ended::before{ background:var(--text3) }
+.chat-call-widget.ended .widget-phone-ico{ background:rgba(255,255,255,0.02);border-color:var(--border2);color:var(--text3);animation:none }
+.chat-call-widget.ended .widget-dot{ background:var(--text3);animation:none }
+.chat-call-widget.ended .widget-timer{ color:var(--text3) }
 
 @media(max-width:768px){
   body{overflow:auto;align-items:flex-start}
@@ -1415,6 +1636,100 @@ input[type=range]:focus{outline:none}
       </button>
     </div>
 
+    <!-- ── INLINE CALL BAR (replaces fullscreen overlay) ── -->
+    <div id="call-inline-bar">
+      <!-- Header: signal bars + status + timer -->
+      <div class="cbar-header">
+        <div class="cbar-signal">
+          <div class="cbar-signal-bar"></div>
+          <div class="cbar-signal-bar"></div>
+          <div class="cbar-signal-bar"></div>
+          <div class="cbar-signal-bar"></div>
+        </div>
+        <div class="cbar-status-col">
+          <div class="cbar-status-label" id="cbar-status-label">CALLING</div>
+          <div class="cbar-peer-name" id="cbar-peer-name">—</div>
+        </div>
+        <div class="cbar-timer" id="call-bar-timer-inline">00:00</div>
+      </div>
+
+      <!-- Participants row -->
+      <div class="cbar-participants" id="cbar-participants">
+        <!-- me -->
+        <div class="cbar-participant" id="cbar-part-me">
+          <div class="cbar-av-wrap" id="cbar-av-me-wrap">
+            <div id="cbar-av-me" style="width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;">?</div>
+          </div>
+          <div class="cbar-av-name" id="cbar-name-me">you</div>
+        </div>
+        <!-- connector -->
+        <div class="cbar-connector" id="cbar-connector">
+          <div class="cbar-connector-dot"></div>
+          <div class="cbar-connector-line"></div>
+          <div class="cbar-connector-dot"></div>
+        </div>
+        <!-- peer -->
+        <div class="cbar-participant" id="cbar-part-peer" style="display:none">
+          <div class="cbar-av-wrap" id="cbar-av-peer-wrap">
+            <div id="cbar-av-peer" style="width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;">?</div>
+          </div>
+          <div class="cbar-av-name" id="cbar-name-peer">—</div>
+        </div>
+        <!-- solo hint -->
+        <div class="cbar-solo-hint" id="cbar-solo-hint"></div>
+      </div>
+
+      <!-- Controls row -->
+      <div class="cbar-controls">
+        <!-- Mic mute -->
+        <div class="cbar-btn-icon" id="cbar-mute-btn" onclick="toggleCallMute()" title="Mute mic">
+          <i class="ti ti-microphone" id="cbar-mute-icon"></i>
+        </div>
+        <!-- Sound mute -->
+        <div class="cbar-btn_icon" id="cbar-sound-btn" onclick="toggleCallSound()" title="Mute sound" style="width:30px;height:30px;border-radius:7px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border2);background:rgba(255,255,255,0.02);color:var(--text3);cursor:pointer;transition:all 0.18s cubic-bezier(0.34,1.56,0.64,1);flex-shrink:0;">
+          <i class="ti ti-volume" id="cbar-sound-icon" style="font-size:13px"></i>
+        </div>
+        <!-- Mic gain -->
+        <div class="cbar-btn" title="Mic level" style="gap:6px;flex:1;min-width:0;max-width:130px;">
+          <i class="ti ti-microphone" style="font-size:11px;flex-shrink:0"></i>
+          <input type="range" id="call-bar-input-gain" min="0" max="400" step="5" value="150"
+            style="flex:1;min-width:0;accent-color:var(--accent);cursor:pointer"
+            oninput="updateInputGain(this.value)">
+          <span id="call-bar-input-val" style="font-size:9px;color:var(--accent);min-width:30px;text-align:right;flex-shrink:0">150%</span>
+        </div>
+        <!-- Vol gain -->
+        <div class="cbar-btn" title="Volume" style="gap:6px;flex:1;min-width:0;max-width:130px;">
+          <i class="ti ti-volume" style="font-size:11px;flex-shrink:0"></i>
+          <input type="range" id="call-bar-output-gain" min="0" max="400" step="10" value="200"
+            style="flex:1;min-width:0;accent-color:var(--accent);cursor:pointer"
+            oninput="updateOutputGain(this.value)">
+          <span id="call-bar-output-val" style="font-size:9px;color:var(--accent);min-width:30px;text-align:right;flex-shrink:0">200%</span>
+        </div>
+        <div class="cbar-spacer"></div>
+        <!-- End call -->
+        <div class="cbar-end-btn" onclick="endCall()">
+          <i class="ti ti-phone-off"></i> End
+        </div>
+      </div>
+
+      <!-- Solo countdown bar -->
+      <div class="cbar-solo-bar" id="call-bar-solo-bar">
+        <div class="cbar-solo-fill" id="call-bar-solo-fill"></div>
+      </div>
+
+      <!-- Legacy hidden IDs for JS compat -->
+      <span id="call-bar-pulse" style="display:none"></span>
+      <span id="call-bar-status" style="display:none"></span>
+      <span id="call-bar-name" style="display:none"></span>
+      <span id="cbm-av-me" style="display:none"></span>
+      <span id="cbm-name-me" style="display:none"></span>
+      <span id="cbm-av-peer" style="display:none"></span>
+      <span id="cbm-name-peer" style="display:none"></span>
+      <span id="cbm-peer" style="display:none"></span>
+      <span id="cbm-state-peer" style="display:none"></span>
+      <span id="cbm-mute-icon" style="display:none"></span>
+    </div>
+
     <div class="chat-header" id="chat-header">
       <i class="ti ti-hash chat-ch-icon" id="ch-icon"></i>
       <span class="chat-ch-name" id="ch-name-display">[ CORE ]</span>
@@ -1498,52 +1813,22 @@ input[type=range]:focus{outline:none}
   </div>
 </div>
 
-<!-- OUTGOING CALL OVERLAY (caller sees this) -->
-<div id="call-overlay">
-  <!-- WAITING STATE — показывается пока не подключились -->
-  <div class="call-card" id="call-waiting-card">
-    <div class="call-label" id="call-direction-label">OUTGOING CALL</div>
-    <div class="call-ripple-wrap">
-      <div class="ripple"></div>
-      <div class="ripple"></div>
-      <div class="ripple"></div>
-      <div class="ripple"></div>
-      <div class="call-avatar" id="call-avatar" style="background:#0a0d10;color:#00E5FF">?</div>
-    </div>
-    <div class="call-name" id="call-contact-name">—</div>
-    <div class="call-state" id="call-state-label">Searching frequency...</div>
-    <div id="call-solo-hint" style="display:none;font-size:10px;color:var(--text3);letter-spacing:0.06em;text-align:center;margin-top:-8px">
-      Channel is open · Waiting for connection
-    </div>
+<!-- Legacy call-overlay (hidden, kept for JS compat) -->
+<div id="call-overlay" style="display:none">
+  <div id="call-waiting-card" style="display:none">
+    <div id="call-direction-label"></div>
+    <div id="call-avatar" style="display:none"></div>
+    <div id="call-contact-name"></div>
+    <div id="call-state-label"></div>
+    <div id="call-solo-hint" style="display:none"></div>
   </div>
-
-  <!-- CONNECTED STATE — двойные карточки участников -->
-  <div id="call-connected-card" style="display:none;flex-direction:column;align-items:center;gap:16px">
-    <div style="font-size:9px;color:rgba(0,229,255,0.4);letter-spacing:0.14em;text-transform:uppercase">CONNECTED · SECURE CHANNEL</div>
-    <div class="call-participants">
-      <!-- Карточка: я -->
-      <div class="call-participant-card" id="call-card-me" onclick="showCallCtxMenu(event,'me')">
-        <div class="call-participant-avatar-wrap" id="call-av-wrap-me">
-          <div class="call-participant-speaking-ring"></div>
-          <div class="call-participant-avatar" id="call-av-me" style="background:#0a0d10;color:#00E5FF">?</div>
-        </div>
-        <div class="call-participant-name" id="call-name-me">—</div>
-        <div class="call-participant-status" id="call-status-me">you</div>
-      </div>
-
-      <div class="call-participant-divider"></div>
-
-      <!-- Карточка: собеседник -->
-      <div class="call-participant-card" id="call-card-peer" onclick="showCallCtxMenu(event,'peer')">
-        <div class="call-participant-avatar-wrap" id="call-av-wrap-peer">
-          <div class="call-participant-speaking-ring"></div>
-          <div class="call-participant-avatar" id="call-av-peer" style="background:#0a0d10;color:#00E5FF">?</div>
-        </div>
-        <div class="call-participant-name" id="call-name-peer">—</div>
-        <div class="call-participant-status" id="call-status-peer">connected</div>
-      </div>
-    </div>
-    <div style="font-size:10px;color:var(--text3);letter-spacing:0.06em">Click a card for options</div>
+  <div id="call-connected-card" style="display:none">
+    <div id="call-av-wrap-me"><div id="call-av-me"></div></div>
+    <div id="call-name-me"></div><div id="call-status-me"></div>
+    <div id="call-card-me" style="display:none"></div>
+    <div id="call-av-wrap-peer"><div id="call-av-peer"></div></div>
+    <div id="call-name-peer"></div><div id="call-status-peer"></div>
+    <div id="call-card-peer" style="display:none"></div>
   </div>
 </div>
 
@@ -1588,17 +1873,20 @@ input[type=range]:focus{outline:none}
 
 <!-- INCOMING CALL OVERLAY (receiver sees this) -->
 <div id="incoming-call-overlay">
-  <div class="call-card" style="border-color:rgba(0,229,255,0.25)">
-    <div class="call-label" style="color:var(--accent)">⟶ INCOMING CALL</div>
-    <div class="call-ripple-wrap">
-      <div class="ripple" style="border-color:rgba(0,229,255,0.6)"></div>
-      <div class="ripple" style="border-color:rgba(0,229,255,0.6)"></div>
-      <div class="ripple" style="border-color:rgba(0,229,255,0.6)"></div>
-      <div class="call-avatar" id="incoming-call-avatar" style="background:#0a0d10;color:#00E5FF">?</div>
+  <div class="incoming-call-card">
+    <div class="incoming-call-top">
+      <div class="incoming-call-av-wrap">
+        <div class="incoming-call-ring"></div>
+        <div class="incoming-call-ring" style="animation-delay:0.4s"></div>
+        <div class="incoming-call-av" id="incoming-call-avatar" style="background:#0a0d10;color:#00E5FF">?</div>
+      </div>
+      <div class="incoming-call-info">
+        <div class="incoming-call-label">⟶ INCOMING CALL</div>
+        <div class="incoming-call-name" id="incoming-call-name">—</div>
+        <div class="incoming-call-sub">wants to connect</div>
+      </div>
     </div>
-    <div class="call-name" id="incoming-call-name">—</div>
-    <div class="call-state" style="animation:none;opacity:0.6">wants to connect</div>
-    <div style="display:flex;gap:14px;margin-top:8px">
+    <div class="incoming-call-btns">
       <div class="call-accept-btn" onclick="acceptIncomingCall()">
         <i class="ti ti-phone"></i> Accept
       </div>
@@ -1606,26 +1894,17 @@ input[type=range]:focus{outline:none}
         <i class="ti ti-phone-off"></i> Decline
       </div>
     </div>
-    <div id="incoming-timeout-bar-wrap" style="width:100%;height:2px;background:var(--border2);border-radius:2px;margin-top:8px;overflow:hidden">
-      <div id="incoming-timeout-bar" style="height:100%;background:var(--accent);width:100%;transition:width 30s linear"></div>
+    <div class="incoming-timeout-track">
+      <div class="incoming-timeout-fill-new" id="incoming-timeout-bar"></div>
     </div>
   </div>
 </div>
 
-<!-- CALL CONTROLS BAR -->
-<div id="call-controls">
+<!-- Legacy call-controls (hidden, kept for JS compat) -->
+<div id="call-controls" style="display:none!important">
   <span class="call-timer" id="call-timer">00:00</span>
-  <div class="call-sep"></div>
-  <div class="call-ctrl-btn" id="call-mute-btn" onclick="toggleCallMute()" title="Mute">
-    <i class="ti ti-microphone" id="call-mute-icon"></i>
-  </div>
-  <div class="call-ctrl-btn" id="call-sound-btn" onclick="toggleCallSound()" title="Deafen">
-    <i class="ti ti-volume" id="call-sound-icon"></i>
-  </div>
-  <div class="call-sep"></div>
-  <div class="call-disconnect" onclick="endCall()" title="Disconnect">
-    <i class="ti ti-phone-off"></i>
-  </div>
+  <div id="call-mute-btn"><i class="ti ti-microphone" id="call-mute-icon"></i></div>
+  <div id="call-sound-btn"><i class="ti ti-volume" id="call-sound-icon"></i></div>
 </div>
 
 <!-- MODAL -->
@@ -2510,7 +2789,10 @@ function startCall() {
   // Signal the other side
   wsSend({ type: 'call_invite', to: dmWith.username, fromColor: me.color });
 
-  // 30-second ring timeout → post widget + solo mode
+  // Post widget immediately — friend sees the call in chat right away
+  postCallWidget();
+
+  // 30-second ring timeout → solo mode
   callRingTimeout = setTimeout(() => {
     callRingTimeout = null;
     enterSoloMode();
@@ -2519,10 +2801,24 @@ function startCall() {
 
 function enterSoloMode(label) {
   callSolo = true;
-  document.getElementById('call-state-label').textContent = label || 'No answer · Channel open';
-  document.getElementById('call-solo-hint').style.display = 'block';
-  postCallWidget();
+  const stateEl = document.getElementById('call-state-label');
+  if (stateEl) stateEl.textContent = label || 'No answer · Channel open';
+  const hintEl = document.getElementById('call-solo-hint');
+  if (hintEl) hintEl.style.display = 'block';
+  // Update inline bar to solo mode
+  setCallCard('call-overlay', callPeer ? callPeer.username : '—', callPeer ? callPeer.color : '#00E5FF', 'SOLO', label || 'Channel open · waiting...');
   startCallTimer();
+  // Trigger solo countdown bar (30s)
+  const soloBar = document.getElementById('call-bar-solo-bar');
+  const soloFill = document.getElementById('call-bar-solo-fill');
+  if (soloBar && soloFill) {
+    soloBar.classList.add('active');
+    soloFill.style.transition = 'none';
+    soloFill.style.width = '100%';
+    void soloFill.offsetWidth;
+    soloFill.style.transition = 'width 30s linear';
+    soloFill.style.width = '0%';
+  }
   // 30 сек один → автозавершение (как в ДС после decline)
   callSoloTimeout = setTimeout(() => {
     callSoloTimeout = null;
@@ -2542,14 +2838,17 @@ function enterSoloMode(label) {
 
 // ── CALLER: peer accepted ──
 async function handleCallAccepted(data) {
-  // Cancel ring timeout if still running
   if (callRingTimeout) { clearTimeout(callRingTimeout); callRingTimeout = null; }
   if (callSoloTimeout) { clearTimeout(callSoloTimeout); callSoloTimeout = null; }
   callSolo = false;
   callActive = true;
   markWidgetEnded();
-  document.getElementById('call-state-label').textContent = 'Connected';
-  document.getElementById('call-solo-hint').style.display = 'none';
+  const stEl = document.getElementById('call-state-label');
+  if (stEl) stEl.textContent = 'Connected';
+  const shEl = document.getElementById('call-solo-hint');
+  if (shEl) shEl.style.display = 'none';
+  // Update inline bar to CONNECTED
+  if (callPeer) setCallCard('call-overlay', callPeer.username, callPeer.color, 'CONNECTED', 'Connected');
   startCallTimer();
   showNotif(`${data.from} joined the call`, 'blue');
   // Caller создаёт WebRTC — ждём полного поднятия перед отправкой offer
@@ -2619,9 +2918,12 @@ function acceptIncomingCall() {
   callActive = true; callSolo = false;
   setCallCard('call-overlay', callPeer.username, callPeer.color, 'CONNECTED', 'Connected');
   showCallOverlay('call-overlay', true);
-  document.getElementById('call-direction-label').textContent = 'CONNECTED';
-  document.getElementById('call-state-label').textContent = 'Connected';
-  document.getElementById('call-solo-hint').style.display = 'none';
+  const dirLabel = document.getElementById('call-direction-label');
+  if (dirLabel) dirLabel.textContent = 'CONNECTED';
+  const stateLabel = document.getElementById('call-state-label');
+  if (stateLabel) stateLabel.textContent = 'Connected';
+  const soloHint = document.getElementById('call-solo-hint');
+  if (soloHint) soloHint.style.display = 'none';
   startCallTimer();
 
   const btn = document.getElementById('call-btn');
@@ -2667,59 +2969,160 @@ function endCall(silent = false) {
   if (!silent && wasActive) showNotif('Call ended');
 }
 
-// ── Только UI сброс, без сигналинга (вызывается из handleCallEnded тоже) ──
+// ── Только UI сброс, без сигналинга ──
 function endCallUI() {
   if (callTimer) { clearInterval(callTimer); callTimer = null; }
 
   showCallOverlay('call-overlay', false);
   showCallOverlay('incoming-call-overlay', false);
 
-  document.getElementById('call-controls').classList.remove('active');
+  // Reset inline call bar
+  const bar = document.getElementById('call-inline-bar');
+  if (bar) bar.classList.remove('active');
+
   document.getElementById('call-timer').textContent = '00:00';
-  document.getElementById('call-mute-btn').classList.remove('muted');
   document.getElementById('call-mute-icon').className = 'ti ti-microphone';
-  document.getElementById('call-sound-btn').classList.remove('muted');
   document.getElementById('call-sound-icon').className = 'ti ti-volume';
   document.getElementById('messages').classList.remove('call-dimmed');
   document.getElementById('messages').classList.remove('call-dimmed-soft');
+
+  // Reset inline bar UI
+  const cbarMute = document.getElementById('cbar-mute-btn');
+  if (cbarMute) cbarMute.classList.remove('muted');
+  const cbarMuteIco = document.getElementById('cbar-mute-icon');
+  if (cbarMuteIco) cbarMuteIco.className = 'ti ti-microphone';
+  const cbarMuteLabel = document.getElementById('cbar-mute-label');
+  if (cbarMuteLabel) cbarMuteLabel.textContent = 'Mute';
+  const cbarSound = document.getElementById('cbar-sound-btn');
+  if (cbarSound) cbarSound.classList.remove('muted');
+  const cbarSoundIco = document.getElementById('cbar-sound-icon');
+  if (cbarSoundIco) cbarSoundIco.className = 'ti ti-volume';
+  const cbarSoundLabel = document.getElementById('cbar-sound-label');
+  if (cbarSoundLabel) cbarSoundLabel.textContent = 'Sound';
+  // new bar
+  const partPeer = document.getElementById('cbar-part-peer');
+  if (partPeer) partPeer.style.display = 'none';
+  const cbarSoloHint = document.getElementById('cbar-solo-hint');
+  if (cbarSoloHint) cbarSoloHint.classList.remove('active');
+  const inlineBar = document.getElementById('call-inline-bar');
+  if (inlineBar) inlineBar.classList.remove('ringing');
+  const cbmPeer = document.getElementById('cbm-peer');
+  if (cbmPeer) cbmPeer.style.display = 'none';
+  const soloBar = document.getElementById('call-bar-solo-bar');
+  if (soloBar) soloBar.classList.remove('active');
+
   const btn = document.getElementById('call-btn');
-  btn.classList.remove('in-call');
-  btn.innerHTML = '<i class="ti ti-phone"></i>';
+  if (btn) { btn.classList.remove('in-call'); btn.innerHTML = '<i class="ti ti-phone"></i>'; }
+}
+
+// Update inline bar timer
+function syncInlineTimer() {
+  const el = document.getElementById('call-bar-timer-inline');
+  if (!el) return;
+  const m = String(Math.floor(callSeconds / 60)).padStart(2,'0');
+  const s = String(callSeconds % 60).padStart(2,'0');
+  el.textContent = m + ':' + s;
 }
 
 // ── HELPERS ──
 function setCallCard(overlayId, name, color, label, state) {
   if (overlayId === 'call-overlay') {
-    if (label) document.getElementById('call-direction-label').textContent = label;
-    if (state) document.getElementById('call-state-label').textContent = state;
-    document.getElementById('call-contact-name').textContent = name;
+    if (label) { const el = document.getElementById('call-direction-label'); if(el) el.textContent = label; }
+    if (state) { const el = document.getElementById('call-state-label'); if(el) el.textContent = state; }
     const av = document.getElementById('call-avatar');
-    av.textContent = name[0].toUpperCase();
-    av.style.color = color; av.style.background = colorToBg(color);
+    if (av) { av.textContent = name[0].toUpperCase(); av.style.color = color; av.style.background = colorToBg(color); }
   }
+  // Always update inline bar
+  updateInlineCallBar(name, color, label, state);
+}
+
+function updateInlineCallBar(peerName, peerColor, label, state) {
+  // New elements
+  const statusLabel = document.getElementById('cbar-status-label');
+  const peerNameEl  = document.getElementById('cbar-peer-name');
+  const avMe        = document.getElementById('cbar-av-me');
+  const nameMe      = document.getElementById('cbar-name-me');
+  const avPeer      = document.getElementById('cbar-av-peer');
+  const namePeer    = document.getElementById('cbar-name-peer');
+  const partPeer    = document.getElementById('cbar-part-peer');
+  const soloHint    = document.getElementById('cbar-solo-hint');
+  const bar         = document.getElementById('call-inline-bar');
+
+  const isRinging   = label === 'OUTGOING CALL' || label === 'CALLING';
+  const isSolo      = label === 'SOLO';
+  const isConnected = label === 'CONNECTED';
+
+  if (peerNameEl) peerNameEl.textContent = peerName || '—';
+
+  if (statusLabel) {
+    statusLabel.textContent = isConnected ? 'CONNECTED' : isRinging ? 'RINGING...' : isSolo ? 'OPEN CHANNEL' : (label || 'CALLING');
+    statusLabel.className = 'cbar-status-label' + (isRinging ? ' ringing' : isSolo ? ' solo' : '');
+  }
+
+  if (bar) {
+    bar.classList.toggle('ringing', isRinging);
+  }
+
+  // My avatar
+  if (avMe && me && me.name) {
+    avMe.textContent = me.name[0].toUpperCase();
+    avMe.style.background = me.color ? colorToBg(me.color) : '#0a0d10';
+    avMe.style.color = me.color || '#00E5FF';
+  }
+  if (nameMe && me) nameMe.textContent = me.name || '—';
+
+  // Peer avatar — show only when connected
+  if (partPeer) partPeer.style.display = isConnected ? 'flex' : 'none';
+  if (avPeer && peerName) {
+    avPeer.textContent = peerName[0].toUpperCase();
+    avPeer.style.background = colorToBg(peerColor || '#00E5FF');
+    avPeer.style.color = peerColor || '#00E5FF';
+  }
+  if (namePeer) namePeer.textContent = peerName || '—';
+
+  // Solo hint
+  if (soloHint) {
+    if (isSolo) {
+      soloHint.textContent = state || 'Channel open · waiting...';
+      soloHint.classList.add('active');
+    } else {
+      soloHint.classList.remove('active');
+    }
+  }
+
+  // Sync volume sliders with current values
+  const barInGain = document.getElementById('call-bar-input-gain');
+  const barInVal  = document.getElementById('call-bar-input-val');
+  const barOutGain = document.getElementById('call-bar-output-gain');
+  const barOutVal  = document.getElementById('call-bar-output-val');
+  if (barInGain) { barInGain.value = inputGainValue; barInGain.style.setProperty('--pct', ((inputGainValue/400)*100).toFixed(1)+'%'); }
+  if (barInVal)  barInVal.textContent = inputGainValue + '%';
+  if (barOutGain){ barOutGain.value = outputGainValue; barOutGain.style.setProperty('--pct', ((outputGainValue/400)*100).toFixed(1)+'%'); }
+  if (barOutVal)  barOutVal.textContent = outputGainValue + '%';
 }
 
 function showCallOverlay(id, show) {
-  const el = document.getElementById(id);
-  const msgs = document.getElementById('messages');
-  if (show) {
-    el.style.display = 'flex';
-    void el.offsetWidth;
-    el.classList.add('active');
-    if (id === 'call-overlay') {
-      msgs.classList.remove('call-dimmed-soft');
-      msgs.classList.add('call-dimmed');
-      document.getElementById('call-controls').classList.add('active');
+  // Legacy shim — now redirects to inline call bar
+  if (id === 'call-overlay') {
+    const bar = document.getElementById('call-inline-bar');
+    if (show) {
+      bar.classList.add('active');
+    } else {
+      bar.classList.remove('active');
     }
-    // incoming-call-overlay is now a floating popup — no dimming needed
+    // Never dim messages
+    const msgs = document.getElementById('messages');
+    msgs.classList.remove('call-dimmed');
+    msgs.classList.remove('call-dimmed-soft');
+    return;
+  }
+  // incoming-call-overlay — CSS transition based
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (show) {
+    el.classList.add('active');
   } else {
     el.classList.remove('active');
-    if (id === 'call-overlay') {
-      msgs.classList.remove('call-dimmed');
-      msgs.classList.remove('call-dimmed-soft');
-      document.getElementById('call-controls').classList.remove('active');
-    }
-    setTimeout(() => { el.style.display = 'none'; }, 400);
   }
 }
 
@@ -2730,47 +3133,79 @@ function startCallTimer() {
     callSeconds++;
     const m = String(Math.floor(callSeconds / 60)).padStart(2,'0');
     const s = String(callSeconds % 60).padStart(2,'0');
-    document.getElementById('call-timer').textContent = `${m}:${s}`;
+    const t = m + ':' + s;
+    const legacy = document.getElementById('call-timer');
+    if (legacy) legacy.textContent = t;
+    const inline = document.getElementById('call-bar-timer-inline');
+    if (inline) inline.textContent = t;
   }, 1000);
 }
 
-// ── CHAT WIDGET: post to channel after ring timeout ──
+// ── CHAT WIDGET: появляется сразу при звонке ──
 function postCallWidget() {
   const msgs = document.getElementById('messages');
   const widget = document.createElement('div');
   widget.className = 'chat-call-widget';
   widget.dataset.callWidget = '1';
-  const friendName = callPeer ? callPeer.username : '—';
+  const ts = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
   widget.innerHTML = `
-    <div class="widget-pulse"></div>
-    <div class="widget-text">
-      <div class="widget-title">⟶ ACTIVE CALL · ${esc(me.name)}</div>
-      <div class="widget-sub">Voice channel open · Click to join</div>
+    <div class="widget-main-row">
+      <div class="widget-icon-col">
+        <div class="widget-phone-ico"><i class="ti ti-phone"></i></div>
+      </div>
+      <div class="widget-text">
+        <div class="widget-title">${esc(me.name)} started a call</div>
+        <div class="widget-sub">
+          <span class="widget-dot"></span>
+          <span>Voice channel open</span>
+          <span class="widget-timer" id="widget-call-timer-${Date.now()}">00:00</span>
+        </div>
+      </div>
+      <div class="widget-actions">
+        <div class="widget-join-btn" onclick="joinCallFromWidget(this)">Join</div>
+      </div>
     </div>
-    <div class="widget-join-btn" onclick="joinCallFromWidget(this)">[ JOIN ]</div>`;
+    <div class="widget-timeout-bar"><div class="widget-timeout-fill" id="widget-timeout-fill"></div></div>`;
   msgs.appendChild(widget);
   scrollBottom();
   callWidgetEl = widget;
 
-  // Send the widget as a special DM so the friend also sees it in their chat
+  // Kick off timeout bar animation
+  requestAnimationFrame(() => {
+    const fill = widget.querySelector('.widget-timeout-fill');
+    if (fill) { fill.style.width = '100%'; void fill.offsetWidth; fill.style.width = '0%'; }
+  });
+
+  // Widget timer
+  const timerEl = widget.querySelector('.widget-timer');
+  let widgetSecs = 0;
+  const widgetTimer = setInterval(() => {
+    if (widget.classList.contains('ended')) { clearInterval(widgetTimer); return; }
+    widgetSecs++;
+    const m = String(Math.floor(widgetSecs/60)).padStart(2,'0');
+    const s = String(widgetSecs%60).padStart(2,'0');
+    if (timerEl) timerEl.textContent = m+':'+s;
+  }, 1000);
+  widget._widgetTimer = widgetTimer;
+
+  // Send to friend's chat too
   if (callPeer && ws && ws.readyState === 1) {
     wsSend({ type: 'call_widget', to: callPeer.username, from: me.name, fromColor: me.color });
   }
 }
 
 function markWidgetEnded() {
-  if (callWidgetEl) {
-    callWidgetEl.classList.add('ended');
-    const btn = callWidgetEl.querySelector('.widget-join-btn');
-    if (btn) btn.textContent = '[ ENDED ]';
-    callWidgetEl = null;
-  }
-  // Also mark any in-chat widgets from messages list
   document.querySelectorAll('.chat-call-widget:not(.ended)').forEach(el => {
     el.classList.add('ended');
     const btn = el.querySelector('.widget-join-btn');
-    if (btn) btn.textContent = '[ ENDED ]';
+    if (btn) { btn.textContent = 'Ended'; btn.style.opacity = '0.4'; btn.style.pointerEvents = 'none'; }
+    const dot = el.querySelector('.widget-dot');
+    if (dot) dot.style.background = 'var(--text3)';
+    if (el._widgetTimer) { clearInterval(el._widgetTimer); el._widgetTimer = null; }
+    const phoneIco = el.querySelector('.widget-phone-ico');
+    if (phoneIco) phoneIco.style.animation = 'none';
   });
+  callWidgetEl = null;
 }
 
 // Callee clicks widget to join
@@ -2786,15 +3221,42 @@ function renderCallWidget(data) {
   widget.className = 'chat-call-widget';
   widget.dataset.callWidgetIncoming = '1';
   widget.innerHTML = `
-    <div class="widget-pulse"></div>
-    <div class="widget-text">
-      <div class="widget-title">⟶ ACTIVE CALL · ${esc(data.from)}</div>
-      <div class="widget-sub">Voice channel open · Click to join</div>
+    <div class="widget-main-row">
+      <div class="widget-icon-col">
+        <div class="widget-phone-ico"><i class="ti ti-phone-incoming"></i></div>
+      </div>
+      <div class="widget-text">
+        <div class="widget-title">${esc(data.from)} is calling you</div>
+        <div class="widget-sub">
+          <span class="widget-dot"></span>
+          <span>Tap Join to connect</span>
+          <span class="widget-timer">00:00</span>
+        </div>
+      </div>
+      <div class="widget-actions">
+        <div class="widget-join-btn" onclick="acceptIncomingCallFromWidget()">Join</div>
+      </div>
     </div>
-    <div class="widget-join-btn" onclick="acceptIncomingCallFromWidget()">[ JOIN ]</div>`;
+    <div class="widget-timeout-bar"><div class="widget-timeout-fill"></div></div>`;
   msgs.appendChild(widget);
   scrollBottom();
   callWidgetEl = widget;
+
+  // Timeout bar + timer
+  requestAnimationFrame(() => {
+    const fill = widget.querySelector('.widget-timeout-fill');
+    if (fill) { fill.style.width = '100%'; void fill.offsetWidth; fill.style.width = '0%'; }
+  });
+  const timerEl = widget.querySelector('.widget-timer');
+  let widgetSecs = 0;
+  const widgetTimer = setInterval(() => {
+    if (widget.classList.contains('ended')) { clearInterval(widgetTimer); return; }
+    widgetSecs++;
+    const m = String(Math.floor(widgetSecs/60)).padStart(2,'0');
+    const s = String(widgetSecs%60).padStart(2,'0');
+    if (timerEl) timerEl.textContent = m+':'+s;
+  }, 1000);
+  widget._widgetTimer = widgetTimer;
 }
 
 function acceptIncomingCallFromWidget() {
@@ -2812,23 +3274,34 @@ function updateCallTimer() {
 
 function toggleCallMute() {
   callMuted = !callMuted;
-  const btn = document.getElementById('call-mute-btn');
   const ico = document.getElementById('call-mute-icon');
-  btn.classList.toggle('muted', callMuted);
-  ico.className = callMuted ? 'ti ti-microphone-off' : 'ti ti-microphone';
+  if (ico) ico.className = callMuted ? 'ti ti-microphone-off' : 'ti ti-microphone';
+  // Inline bar — new design
+  const cbarBtn = document.getElementById('cbar-mute-btn');
+  const cbarIco = document.getElementById('cbar-mute-icon');
+  const cbarLabel = document.getElementById('cbar-mute-label');
+  if (cbarBtn) { cbarBtn.classList.toggle('muted', callMuted); cbarBtn.style.background = callMuted ? 'rgba(255,68,102,0.1)' : ''; cbarBtn.style.borderColor = callMuted ? 'rgba(255,68,102,0.28)' : ''; cbarBtn.style.color = callMuted ? 'var(--red)' : ''; }
+  if (cbarIco) cbarIco.className = callMuted ? 'ti ti-microphone-off' : 'ti ti-microphone';
+  if (cbarLabel) cbarLabel.textContent = callMuted ? 'Unmute' : 'Mute';
+  // Avatar wrap muted indicator
+  const avMeWrap = document.getElementById('cbar-av-me-wrap');
+  if (avMeWrap) avMeWrap.classList.toggle('muted', callMuted);
   if (localStream) localStream.getAudioTracks().forEach(t => t.enabled = !callMuted);
   if (callStream)  callStream.getAudioTracks().forEach(t => t.enabled = !callMuted);
 }
 
 function toggleCallSound() {
   callSoundMuted = !callSoundMuted;
-  const btn = document.getElementById('call-sound-btn');
   const ico = document.getElementById('call-sound-icon');
-  btn.classList.toggle('muted', callSoundMuted);
-  ico.className = callSoundMuted ? 'ti ti-volume-off' : 'ti ti-volume';
-  for (const audio of Object.values(audioElements)) {
-    audio.muted = callSoundMuted;
-  }
+  if (ico) ico.className = callSoundMuted ? 'ti ti-volume-off' : 'ti ti-volume';
+  // Inline bar — new design
+  const cbarBtn = document.getElementById('cbar-sound-btn');
+  const cbarIco = document.getElementById('cbar-sound-icon');
+  const cbarLabel = document.getElementById('cbar-sound-label');
+  if (cbarBtn) { cbarBtn.classList.toggle('muted', callSoundMuted); cbarBtn.style.background = callSoundMuted ? 'rgba(255,68,102,0.1)' : ''; cbarBtn.style.borderColor = callSoundMuted ? 'rgba(255,68,102,0.28)' : ''; cbarBtn.style.color = callSoundMuted ? 'var(--red)' : ''; }
+  if (cbarIco) cbarIco.className = callSoundMuted ? 'ti ti-volume-off' : 'ti ti-volume';
+  if (cbarLabel) cbarLabel.textContent = callSoundMuted ? 'Undeafen' : 'Sound';
+  for (const audio of Object.values(audioElements)) { audio.muted = callSoundMuted; }
   const callAudio = document.getElementById('call-remote-audio');
   if (callAudio) callAudio.muted = callSoundMuted;
 }
