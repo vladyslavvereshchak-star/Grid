@@ -1,6 +1,6 @@
 {
   "name": "grid-desktop",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "GRID — Secure Messenger",
   "main": "main.js",
   "scripts": {
@@ -41,8 +41,18 @@
     },
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] },
-        { "target": "portable", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "public/icon.ico"
     },
