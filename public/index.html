@@ -577,23 +577,24 @@ body.electron .app{height:calc(100vh - 32px)}
 /* ── Main call panel embedded above chat ── */
 #call-inline-bar{
   display:none;
-  flex-shrink:0;
   flex-direction:column;
-  background:linear-gradient(180deg,#0a1215 0%,#080d0f 100%);
-  border-bottom:1px solid rgba(0,229,255,0.12);
+  flex-shrink:0;
+  background:#232428;
+  border-top:1px solid rgba(255,255,255,0.06);
   position:relative;
   overflow:hidden;
+  margin-top:auto;
 }
 #call-inline-bar::before{
   content:'';position:absolute;top:0;left:0;right:0;height:1px;
-  background:linear-gradient(90deg,transparent,rgba(0,229,255,0.3),rgba(192,132,252,0.2),transparent);
+  background:linear-gradient(90deg,transparent,rgba(0,229,255,0.2),transparent);
 }
 #call-inline-bar.active{ display:flex }
 
 /* ── Top row: status + timer + controls ── */
 .cbar-header{
-  display:flex;align-items:center;gap:10px;
-  padding:10px 16px 8px;
+  display:flex;align-items:center;gap:8px;
+  padding:8px 12px 4px;
 }
 .cbar-signal{
   display:flex;gap:3px;align-items:flex-end;flex-shrink:0;
@@ -672,7 +673,7 @@ body.electron .app{height:calc(100vh - 32px)}
 /* ── Controls row ── */
 .cbar-controls{
   display:flex;align-items:center;gap:6px;
-  padding:0 12px 10px;
+  padding:4px 10px 8px;
 }
 .cbar-btn{
   display:flex;align-items:center;justify-content:center;gap:5px;
@@ -762,32 +763,33 @@ body.electron .app{height:calc(100vh - 32px)}
 
 /* ── DUAL PARTICIPANT CARDS ── */
 .call-participants{
-  display:flex;gap:20px;align-items:flex-start;
-  padding:24px 32px 20px;
+  display:flex;gap:8px;align-items:center;
+  padding:8px 12px 4px;
   position:relative;z-index:1;
+  flex-wrap:wrap;
 }
 
 .call-participant-card{
-  display:flex;flex-direction:column;align-items:center;gap:10px;
-  width:140px;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;gap:4px;
+  width:52px;cursor:pointer;
   transition:transform 0.15s;
   position:relative;
   user-select:none;
 }
-.call-participant-card:hover{transform:scale(1.03)}
+.call-participant-card:hover{transform:scale(1.05)}
 
 .call-participant-avatar-wrap{
-  position:relative;width:100px;height:100px;
+  position:relative;width:40px;height:40px;
   display:flex;align-items:center;justify-content:center;
 }
 
 .call-participant-avatar{
-  width:90px;height:90px;border-radius:14px;
+  width:36px;height:36px;border-radius:8px;
   display:flex;align-items:center;justify-content:center;
-  font-size:32px;font-weight:700;
+  font-size:14px;font-weight:700;
   border:2px solid rgba(255,255,255,0.08);
   position:relative;z-index:2;flex-shrink:0;
-  transition:border-color 0.2s,box-shadow 0.2s;
+  transition:border-color 0.15s,box-shadow 0.15s;
 }
 
 /* Speaking ring — появляется когда говорит */
@@ -825,18 +827,20 @@ body.electron .app{height:calc(100vh - 32px)}
 }
 
 .call-participant-name{
-  font-size:12px;font-weight:700;color:var(--text);
-  letter-spacing:0.04em;text-align:center;
+  font-size:9px;font-weight:700;color:var(--text2);
+  letter-spacing:0.02em;text-align:center;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  max-width:52px;
 }
 .call-participant-status{
-  font-size:9px;color:var(--text3);letter-spacing:0.08em;
-  text-transform:uppercase;text-align:center;margin-top:-4px;
+  font-size:8px;color:var(--text3);letter-spacing:0.04em;
+  text-transform:uppercase;text-align:center;margin-top:-2px;
 }
 .call-participant-status.speaking{color:var(--accent);opacity:0.9}
 
 .call-participant-divider{
   width:1px;background:rgba(255,255,255,0.06);
-  margin-top:45px;height:60px;flex-shrink:0;
+  height:36px;flex-shrink:0;align-self:center;
 }
 
 /* ── WAITING STATE (одиночная карточка) ── */
@@ -1185,81 +1189,95 @@ input[type=range]:focus{outline:none}
    INCOMING CALL OVERLAY — modern popup
 ══════════════════════════════════ */
 #incoming-call-overlay{
-  position:fixed;bottom:24px;left:calc(var(--dock-w) + 12px);
-  z-index:500;pointer-events:none;opacity:0;
-  transform:translateY(16px);
-  transition:opacity 0.25s ease,transform 0.25s ease;
+  position:fixed;bottom:20px;right:20px;
+  display:none;z-index:255;
+  pointer-events:none;
 }
-#incoming-call-overlay.active{
-  pointer-events:all;opacity:1;transform:translateY(0);
-}
+#incoming-call-overlay.active{display:block;pointer-events:all}
+
 .incoming-call-card{
-  background:#1e2124;
-  border:1px solid rgba(255,255,255,0.08);
-  border-radius:8px;
-  padding:16px;
-  width:280px;
-  box-shadow:0 8px 32px rgba(0,0,0,0.6);
+  background:linear-gradient(145deg,#101418 0%,#0c0f11 100%);
+  border:1px solid rgba(0,229,255,0.2);
+  border-radius:14px;width:300px;
+  box-shadow:
+    0 0 0 1px rgba(0,229,255,0.06),
+    0 8px 40px rgba(0,0,0,0.8),
+    0 0 60px rgba(0,229,255,0.06);
+  overflow:hidden;
+  transform:translateY(20px) scale(0.96);opacity:0;
+  transition:transform 0.35s var(--ease),opacity 0.3s ease;
 }
+#incoming-call-overlay.active .incoming-call-card{
+  transform:translateY(0) scale(1);opacity:1;
+}
+
 .incoming-call-top{
-  display:flex;align-items:center;gap:12px;margin-bottom:14px;
+  padding:16px 16px 12px;
+  display:flex;align-items:center;gap:12px;
+  border-bottom:1px solid var(--border);
 }
 .incoming-call-av-wrap{
   position:relative;flex-shrink:0;
 }
+.incoming-call-av{
+  width:44px;height:44px;border-radius:11px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:18px;font-weight:700;
+  border:2px solid rgba(0,229,255,0.2);
+}
 .incoming-call-ring{
-  position:absolute;inset:-4px;border-radius:50%;
-  border:2px solid rgba(0,229,255,0.4);
-  animation:incomingRing 1.6s ease-out infinite;
+  position:absolute;inset:-5px;border-radius:14px;
+  border:1.5px solid rgba(0,229,255,0.25);
+  animation:incomingRing 2s ease-in-out infinite;
+}
+.incoming-call-ring:nth-child(2){
+  inset:-10px;border-radius:18px;
+  animation-delay:0.4s;opacity:0.5;
 }
 @keyframes incomingRing{
-  0%{transform:scale(1);opacity:0.6}
-  100%{transform:scale(1.5);opacity:0}
-}
-.incoming-call-av{
-  width:40px;height:40px;border-radius:50%;
-  display:flex;align-items:center;justify-content:center;
-  font-size:16px;font-weight:700;position:relative;z-index:1;
+  0%,100%{opacity:0.6;transform:scale(1)}
+  50%{opacity:0;transform:scale(1.08)}
 }
 .incoming-call-info{ flex:1;min-width:0 }
 .incoming-call-label{
-  font-size:9px;color:var(--accent);letter-spacing:0.1em;
-  text-transform:uppercase;margin-bottom:3px;font-weight:700;
+  font-size:9px;letter-spacing:0.12em;text-transform:uppercase;
+  color:var(--accent);font-weight:700;margin-bottom:3px;
 }
 .incoming-call-name{
-  font-size:14px;font-weight:700;color:#fff;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  font-size:15px;font-weight:700;color:var(--text);
+  letter-spacing:0.03em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
 .incoming-call-sub{
-  font-size:10px;color:#72767d;margin-top:2px;
+  font-size:10px;color:var(--text3);letter-spacing:0.04em;margin-top:1px;
 }
+
 .incoming-call-btns{
-  display:flex;gap:8px;
+  display:flex;gap:8px;padding:10px 16px 14px;
 }
 .call-accept-btn{
   flex:1;display:flex;align-items:center;justify-content:center;gap:6px;
-  height:36px;border-radius:4px;
-  background:#3ba55c;color:#fff;
-  font-size:12px;font-weight:700;cursor:pointer;
-  transition:background 0.15s;font-family:'JetBrains Mono',monospace;
-  letter-spacing:0.04em;
+  background:rgba(0,229,255,0.1);border:1px solid var(--accent-border);
+  border-radius:9px;padding:9px 0;cursor:pointer;
+  font-size:11px;font-weight:700;color:var(--accent);
+  font-family:'JetBrains Mono',monospace;letter-spacing:0.06em;
+  transition:all 0.2s;
 }
-.call-accept-btn:hover{background:#2d7d46}
+.call-accept-btn:hover{background:rgba(0,229,255,0.18);box-shadow:0 0 18px rgba(0,229,255,0.15)}
 .call-decline-btn{
   flex:1;display:flex;align-items:center;justify-content:center;gap:6px;
-  height:36px;border-radius:4px;
-  background:#ed4245;color:#fff;
-  font-size:12px;font-weight:700;cursor:pointer;
-  transition:background 0.15s;font-family:'JetBrains Mono',monospace;
-  letter-spacing:0.04em;
+  background:rgba(255,68,102,0.08);border:1px solid rgba(255,68,102,0.22);
+  border-radius:9px;padding:9px 0;cursor:pointer;
+  font-size:11px;font-weight:700;color:var(--red);
+  font-family:'JetBrains Mono',monospace;letter-spacing:0.06em;
+  transition:all 0.2s;
 }
-.call-decline-btn:hover{background:#c03537}
+.call-decline-btn:hover{background:rgba(255,68,102,0.16)}
+
 .incoming-timeout-track{
-  height:2px;background:rgba(255,255,255,0.06);border-radius:2px;
-  margin-top:12px;overflow:hidden;
+  height:2px;background:var(--border2);
 }
 .incoming-timeout-fill-new{
-  height:100%;background:var(--accent);border-radius:2px;
+  height:100%;background:linear-gradient(90deg,var(--accent),rgba(0,229,255,0.3));
   width:100%;transition:width 30s linear;
 }
 
@@ -1620,24 +1638,10 @@ input[type=range]:focus{outline:none}
       <div id="dm-list"></div>
     </div>
 
-  </div>
-
-  <!-- RESIZER -->
-  <div class="grid-resizer" id="grid-resizer"></div>
-
-  <!-- CHAT PANEL -->
-  <div class="panel-chat">
-    <div id="voice-bar">
-      <i class="ti ti-volume voice-bar-icon"></i>
-      <span class="voice-bar-name" id="voice-bar-name">voice-1</span>
-      <div class="voice-bar-members" id="voice-bar-members"></div>
-      <button class="voice-leave-btn" onclick="leaveVoiceChannel()">
-        <i class="ti ti-phone-off"></i> DISCONNECT
-      </button>
-    </div>
-
+  
+  <!-- ── DISCORD-STYLE CALL BAR — bottom of sub-panel ── -->
     <!-- ── INLINE CALL BAR (replaces fullscreen overlay) ── -->
-    <div id="call-inline-bar">
+  <div id="call-inline-bar">
       <!-- Header: signal bars + status + timer -->
       <div class="cbar-header">
         <div class="cbar-signal">
@@ -1729,6 +1733,23 @@ input[type=range]:focus{outline:none}
       <span id="cbm-state-peer" style="display:none"></span>
       <span id="cbm-mute-icon" style="display:none"></span>
     </div>
+
+</div>
+
+  <!-- RESIZER -->
+  <div class="grid-resizer" id="grid-resizer"></div>
+
+  <!-- CHAT PANEL -->
+  <div class="panel-chat">
+    <div id="voice-bar">
+      <i class="ti ti-volume voice-bar-icon"></i>
+      <span class="voice-bar-name" id="voice-bar-name">voice-1</span>
+      <div class="voice-bar-members" id="voice-bar-members"></div>
+      <button class="voice-leave-btn" onclick="leaveVoiceChannel()">
+        <i class="ti ti-phone-off"></i> DISCONNECT
+      </button>
+    </div>
+
 
     <div class="chat-header" id="chat-header">
       <i class="ti ti-hash chat-ch-icon" id="ch-icon"></i>
@@ -3116,13 +3137,16 @@ function showCallOverlay(id, show) {
     msgs.classList.remove('call-dimmed-soft');
     return;
   }
-  // incoming-call-overlay — CSS transition based
+  // incoming-call-overlay — keep as-is
   const el = document.getElementById(id);
   if (!el) return;
   if (show) {
+    el.style.display = 'flex';
+    void el.offsetWidth;
     el.classList.add('active');
   } else {
     el.classList.remove('active');
+    setTimeout(() => { if (el) el.style.display = 'none'; }, 400);
   }
 }
 
