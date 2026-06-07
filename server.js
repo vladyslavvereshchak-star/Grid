@@ -17,10 +17,10 @@ const { Pool } = require('pg');
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
+const wss = new WebSocket.Server({ server, maxPayload: 70 * 1024 * 1024 });
 
 app.use(express.static(path.join(__dirname, 'public')));
-app.use(express.json({ limit: '3mb' }));
+app.use(express.json({ limit: '70mb' }));
 
 const JWT_SECRET = process.env.JWT_SECRET || 'grid-secret-key-change-in-prod';
 

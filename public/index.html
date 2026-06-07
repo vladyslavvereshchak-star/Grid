@@ -761,7 +761,34 @@ input[type=range].ctx-slider::-webkit-slider-runnable-track{
 }
 .ctx-sep{height:1px;background:rgba(255,255,255,0.05);margin:4px 0}
 
-/* Profile modal вызываемый из ctx меню */
+/* ── LIGHTBOX ── */
+#lightbox{
+  position:fixed;inset:0;z-index:99999;
+  background:rgba(0,0,0,0.92);
+  display:none;align-items:center;justify-content:center;
+  cursor:zoom-out;
+  backdrop-filter:blur(8px);
+}
+#lightbox.open{display:flex}
+#lightbox img{
+  max-width:92vw;max-height:92vh;
+  object-fit:contain;border-radius:8px;
+  box-shadow:0 0 80px rgba(0,0,0,0.8);
+  cursor:default;
+  transition:transform 0.2s;
+}
+#lightbox-close{
+  position:absolute;top:18px;right:22px;
+  color:rgba(255,255,255,0.6);font-size:28px;cursor:pointer;
+  transition:color 0.15s;line-height:1;
+}
+#lightbox-close:hover{color:#fff}
+#lightbox-filename{
+  position:absolute;bottom:18px;left:50%;transform:translateX(-50%);
+  font-size:11px;color:rgba(255,255,255,0.4);
+  font-family:'JetBrains Mono',monospace;letter-spacing:0.06em;
+  pointer-events:none;
+}
 #call-profile-modal{
   position:fixed;inset:0;z-index:10000;
   background:rgba(0,0,0,0.7);
@@ -3183,7 +3210,7 @@ function renderMsg(data, isHistory) {
   div.className = 'msg'+(isCompact?' compact':'');
   div.dataset.msgId = data.id || '';
   div.innerHTML = `
-    <div class="msg-av" style="background:${bg};color:${data.color}">${initials}</div>
+    <div class="msg-av" style="${avStyle(data.color, data.avatar, data.username)}" data-user="${esc(data.username)}">${avHtml(data.username, data.color, data.avatar)}</div>
     <div class="msg-body">
       ${!isCompact?`<div class="msg-meta">
         <span class="msg-name" style="color:${data.color}">${esc(data.username)}</span>
@@ -3266,8 +3293,9 @@ function renderDmMsg(data, isOwn) {
   const div = document.createElement('div');
   div.className = 'msg'+(isCompact?' compact':'');
   div.dataset.msgId = data.id || '';
+  const avatarUrl = isOwn ? (avatarCache.get(me.name) || null) : (data.fromAvatar || avatarCache.get(data.from) || null);
   div.innerHTML = `
-    <div class="msg-av" style="background:${colorToBg(color)};color:${color}">${name[0].toUpperCase()}</div>
+    <div class="msg-av" style="${avStyle(color, avatarUrl, name)}" data-user="${esc(name)}">${avHtml(name, color, avatarUrl)}</div>
     <div class="msg-body">
       ${!isCompact?`<div class="msg-meta">
         <span class="msg-name" style="color:${color}">${esc(name)}</span>
@@ -4368,8 +4396,8 @@ function triggerFileAttach() {
 function handleFileAttach(input) {
   const file = input.files[0];
   if (!file) return;
-  if (file.size > 5 * 1024 * 1024) {
-    showNotif('File too large (max 5MB)');
+  if (file.size > 50 * 1024 * 1024) {
+    showNotif('File too large (max 50MB)');
     input.value = '';
     return;
   }
@@ -4399,12 +4427,13 @@ function formatBytes(bytes) {
 // Patch renderMsgContent to render images/files from data urls
 function renderMsgContent(text) {
   if (!text) return '';
-  // Check if it's a file attachment payload (JSON)
   if (text.startsWith('__FILE__:')) {
     try {
       const payload = JSON.parse(text.slice(9));
       if (payload.type && payload.type.startsWith('image/')) {
-        return `<img src="${payload.data}" class="msg-img-attach" onclick="window.open('${payload.data}')" title="${esc(payload.name)}">`;
+        return `<img src="${payload.data}" class="msg-img-attach"
+          onclick="openLightbox('${payload.data.replace(/'/g,"\\'")}','${esc(payload.name)}')"
+          title="${esc(payload.name)}">`;
       }
       return `<a class="msg-file" href="${payload.data}" download="${payload.name}" target="_blank">
         <i class="ti ti-file msg-file-icon"></i>
@@ -4417,6 +4446,24 @@ function renderMsgContent(text) {
     } catch(e) {}
   }
   return esc(text);
+}
+
+function openLightbox(src, filename) {
+  const lb = document.getElementById('lightbox');
+  document.getElementById('lightbox-img').src = src;
+  document.getElementById('lightbox-filename').textContent = filename || '';
+  lb.classList.add('open');
+  document.addEventListener('keydown', _lbKey);
+}
+
+function closeLightbox() {
+  document.getElementById('lightbox').classList.remove('open');
+  document.getElementById('lightbox-img').src = '';
+  document.removeEventListener('keydown', _lbKey);
+}
+
+function _lbKey(e) {
+  if (e.key === 'Escape') closeLightbox();
 }
 
 // Patch sendMessage to include file
@@ -4657,6 +4704,11 @@ function searchMessages(query) {
   headerRight.insertBefore(searchBtn, headerRight.firstChild);
 })();
 </script>
+<div id="lightbox" onclick="closeLightbox()">
+  <span id="lightbox-close" onclick="closeLightbox()"><i class="ti ti-x"></i></span>
+  <img id="lightbox-img" src="" onclick="event.stopPropagation()">
+  <div id="lightbox-filename"></div>
+</div>
 </body>
 </html>
 <script>
