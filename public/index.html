@@ -581,15 +581,65 @@ body.electron .app{height:calc(100vh - 32px)}
   flex-shrink:0;
   background:#232428;
   border-top:1px solid rgba(255,255,255,0.06);
-  position:relative;
-  overflow:hidden;
-  margin-top:auto;
-}
-#call-inline-bar::before{
-  content:'';position:absolute;top:0;left:0;right:0;height:1px;
-  background:linear-gradient(90deg,transparent,rgba(0,229,255,0.2),transparent);
+  padding:8px 10px;
+  gap:6px;
 }
 #call-inline-bar.active{ display:flex }
+
+/* Voice status row */
+#cbar-voice-status{
+  display:flex;align-items:center;gap:8px;
+}
+#cbar-voice-icon{
+  width:32px;height:32px;border-radius:50%;
+  background:rgba(0,229,255,0.1);
+  display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;
+  animation:voicePulse 2s infinite;
+}
+#cbar-voice-icon i{font-size:14px;color:var(--accent)}
+@keyframes voicePulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(0,229,255,0.3)}
+  50%{box-shadow:0 0 0 4px rgba(0,229,255,0)}
+}
+#call-inline-bar.connected #cbar-voice-icon{
+  background:rgba(59,165,92,0.15);
+  animation:none;
+}
+#call-inline-bar.connected #cbar-voice-icon i{color:#3ba55c}
+#cbar-voice-info{flex:1;min-width:0}
+.cbar-status-label{
+  font-size:9px;letter-spacing:0.1em;text-transform:uppercase;
+  font-weight:700;color:var(--accent);line-height:1;margin-bottom:2px;
+}
+.cbar-status-label.connected{color:#3ba55c}
+.cbar-peer-name{
+  font-size:12px;font-weight:700;color:var(--text);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.cbar-timer{
+  font-size:10px;color:var(--text3);
+  font-family:'JetBrains Mono',monospace;flex-shrink:0;
+}
+/* Controls row */
+#cbar-voice-controls{
+  display:flex;align-items:center;gap:4px;
+}
+.cbar-icon-btn{
+  width:32px;height:32px;border-radius:4px;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;color:#b9bbbe;font-size:16px;
+  transition:background 0.15s,color 0.15s;
+  flex-shrink:0;
+}
+.cbar-icon-btn:hover{background:rgba(255,255,255,0.08);color:#fff}
+.cbar-icon-btn.muted{color:#ed4245}
+.cbar-icon-btn.muted:hover{background:rgba(237,66,69,0.1);color:#ed4245}
+.cbar-end{
+  margin-left:auto;
+  color:#ed4245;
+}
+.cbar-end:hover{background:rgba(237,66,69,0.1)!important;color:#ed4245!important}
 
 /* ── Top row: status + timer + controls ── */
 .cbar-header{
@@ -1640,99 +1690,59 @@ input[type=range]:focus{outline:none}
 
   
   <!-- ── DISCORD-STYLE CALL BAR — bottom of sub-panel ── -->
-    <!-- ── INLINE CALL BAR (replaces fullscreen overlay) ── -->
   <div id="call-inline-bar">
-      <!-- Header: signal bars + status + timer -->
-      <div class="cbar-header">
-        <div class="cbar-signal">
-          <div class="cbar-signal-bar"></div>
-          <div class="cbar-signal-bar"></div>
-          <div class="cbar-signal-bar"></div>
-          <div class="cbar-signal-bar"></div>
-        </div>
-        <div class="cbar-status-col">
-          <div class="cbar-status-label" id="cbar-status-label">CALLING</div>
-          <div class="cbar-peer-name" id="cbar-peer-name">—</div>
-        </div>
-        <div class="cbar-timer" id="call-bar-timer-inline">00:00</div>
+    <!-- Voice connected status -->
+    <div id="cbar-voice-status">
+      <div id="cbar-voice-icon"><i class="ti ti-phone"></i></div>
+      <div id="cbar-voice-info">
+        <div id="cbar-status-label" class="cbar-status-label">CALLING</div>
+        <div id="cbar-peer-name" class="cbar-peer-name">—</div>
       </div>
-
-      <!-- Participants row -->
-      <div class="cbar-participants" id="cbar-participants">
-        <!-- me -->
-        <div class="cbar-participant" id="cbar-part-me">
-          <div class="cbar-av-wrap" id="cbar-av-me-wrap">
-            <div id="cbar-av-me" style="width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;">?</div>
-          </div>
-          <div class="cbar-av-name" id="cbar-name-me">you</div>
-        </div>
-        <!-- connector -->
-        <div class="cbar-connector" id="cbar-connector">
-          <div class="cbar-connector-dot"></div>
-          <div class="cbar-connector-line"></div>
-          <div class="cbar-connector-dot"></div>
-        </div>
-        <!-- peer -->
-        <div class="cbar-participant" id="cbar-part-peer" style="display:none">
-          <div class="cbar-av-wrap" id="cbar-av-peer-wrap">
-            <div id="cbar-av-peer" style="width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;">?</div>
-          </div>
-          <div class="cbar-av-name" id="cbar-name-peer">—</div>
-        </div>
-        <!-- solo hint -->
-        <div class="cbar-solo-hint" id="cbar-solo-hint"></div>
-      </div>
-
-      <!-- Controls row -->
-      <div class="cbar-controls">
-        <!-- Mic mute -->
-        <div class="cbar-btn-icon" id="cbar-mute-btn" onclick="toggleCallMute()" title="Mute mic">
-          <i class="ti ti-microphone" id="cbar-mute-icon"></i>
-        </div>
-        <!-- Sound mute -->
-        <div class="cbar-btn_icon" id="cbar-sound-btn" onclick="toggleCallSound()" title="Mute sound" style="width:30px;height:30px;border-radius:7px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border2);background:rgba(255,255,255,0.02);color:var(--text3);cursor:pointer;transition:all 0.18s cubic-bezier(0.34,1.56,0.64,1);flex-shrink:0;">
-          <i class="ti ti-volume" id="cbar-sound-icon" style="font-size:13px"></i>
-        </div>
-        <!-- Mic gain -->
-        <div class="cbar-btn" title="Mic level" style="gap:6px;flex:1;min-width:0;max-width:130px;">
-          <i class="ti ti-microphone" style="font-size:11px;flex-shrink:0"></i>
-          <input type="range" id="call-bar-input-gain" min="0" max="400" step="5" value="150"
-            style="flex:1;min-width:0;accent-color:var(--accent);cursor:pointer"
-            oninput="updateInputGain(this.value)">
-          <span id="call-bar-input-val" style="font-size:9px;color:var(--accent);min-width:30px;text-align:right;flex-shrink:0">150%</span>
-        </div>
-        <!-- Vol gain -->
-        <div class="cbar-btn" title="Volume" style="gap:6px;flex:1;min-width:0;max-width:130px;">
-          <i class="ti ti-volume" style="font-size:11px;flex-shrink:0"></i>
-          <input type="range" id="call-bar-output-gain" min="0" max="400" step="10" value="200"
-            style="flex:1;min-width:0;accent-color:var(--accent);cursor:pointer"
-            oninput="updateOutputGain(this.value)">
-          <span id="call-bar-output-val" style="font-size:9px;color:var(--accent);min-width:30px;text-align:right;flex-shrink:0">200%</span>
-        </div>
-        <div class="cbar-spacer"></div>
-        <!-- End call -->
-        <div class="cbar-end-btn" onclick="endCall()">
-          <i class="ti ti-phone-off"></i> End
-        </div>
-      </div>
-
-      <!-- Solo countdown bar -->
-      <div class="cbar-solo-bar" id="call-bar-solo-bar">
-        <div class="cbar-solo-fill" id="call-bar-solo-fill"></div>
-      </div>
-
-      <!-- Legacy hidden IDs for JS compat -->
-      <span id="call-bar-pulse" style="display:none"></span>
-      <span id="call-bar-status" style="display:none"></span>
-      <span id="call-bar-name" style="display:none"></span>
-      <span id="cbm-av-me" style="display:none"></span>
-      <span id="cbm-name-me" style="display:none"></span>
-      <span id="cbm-av-peer" style="display:none"></span>
-      <span id="cbm-name-peer" style="display:none"></span>
-      <span id="cbm-peer" style="display:none"></span>
-      <span id="cbm-state-peer" style="display:none"></span>
-      <span id="cbm-mute-icon" style="display:none"></span>
+      <div id="call-bar-timer-inline" class="cbar-timer">00:00</div>
     </div>
+    <!-- Controls row — Discord style -->
+    <div id="cbar-voice-controls">
+      <div id="cbar-mute-btn" class="cbar-icon-btn" onclick="toggleCallMute()" title="Mute">
+        <i class="ti ti-microphone" id="cbar-mute-icon"></i>
+      </div>
+      <div id="cbar-sound-btn" class="cbar-icon-btn" onclick="toggleCallSound()" title="Deafen">
+        <i class="ti ti-volume" id="cbar-sound-icon"></i>
+      </div>
+      <div class="cbar-icon-btn cbar-end" onclick="endCall()" title="Disconnect">
+        <i class="ti ti-phone-off"></i>
+      </div>
+    </div>
+    <!-- Hidden legacy IDs for JS compat -->
+    <span id="call-bar-pulse" style="display:none"></span>
+    <span id="call-bar-status" style="display:none"></span>
+    <span id="call-bar-name" style="display:none"></span>
+    <span id="cbm-av-me" style="display:none"></span>
+    <span id="cbm-name-me" style="display:none"></span>
+    <span id="cbm-av-peer" style="display:none"></span>
+    <span id="cbm-name-peer" style="display:none"></span>
+    <span id="cbm-peer" style="display:none"></span>
+    <span id="cbm-state-peer" style="display:none"></span>
+    <span id="cbm-mute-icon" style="display:none"></span>
+    <!-- Legacy cbar IDs for JS compat -->
+    <span id="cbar-part-me" style="display:none"></span>
+    <span id="cbar-part-peer" style="display:none"></span>
+    <span id="cbar-av-me" style="display:none"></span>
+    <span id="cbar-av-peer" style="display:none"></span>
+    <span id="cbar-av-me-wrap" style="display:none"></span>
+    <span id="cbar-av-peer-wrap" style="display:none"></span>
+    <span id="cbar-name-me" style="display:none"></span>
+    <span id="cbar-name-peer" style="display:none"></span>
+    <span id="cbar-participants" style="display:none"></span>
+    <span id="cbar-connector" style="display:none"></span>
+    <span id="cbar-solo-hint" style="display:none"></span>
+    <span id="call-bar-solo-bar" style="display:none"></span>
+    <span id="call-bar-solo-fill" style="display:none"></span>
+    <span id="call-bar-input-gain" style="display:none"></span>
+    <span id="call-bar-output-gain" style="display:none"></span>
+    <span id="call-bar-input-val" style="display:none"></span>
+    <span id="call-bar-output-val" style="display:none"></span>
+    <span id="cbar-end-btn" style="display:none"></span>
+  </div>
 
 </div>
 
@@ -3130,6 +3140,7 @@ function showCallOverlay(id, show) {
       bar.classList.add('active');
     } else {
       bar.classList.remove('active');
+      bar.classList.remove('connected');
     }
     // Never dim messages
     const msgs = document.getElementById('messages');
@@ -3531,8 +3542,12 @@ async function startCallWebRTC(peerUsername, isInitiator) {
   callPc.onconnectionstatechange = () => {
     if (callPc && callPc.connectionState === 'connected') {
       document.getElementById('call-state-label').textContent = 'Connected · Audio live';
-      // Применяем максимальный битрейт после установки соединения
       applyHighBitrate(callPc);
+      // Mark bar as connected — changes icon/color
+      const bar = document.getElementById('call-inline-bar');
+      if (bar) bar.classList.add('connected');
+      const lbl = document.getElementById('cbar-status-label');
+      if (lbl) { lbl.textContent = 'CONNECTED'; lbl.className = 'cbar-status-label connected'; }
     }
     if (callPc && (callPc.connectionState === 'failed' || callPc.connectionState === 'disconnected')) {
       document.getElementById('call-state-label').textContent = 'Connection lost';
