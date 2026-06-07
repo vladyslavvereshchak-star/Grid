@@ -742,23 +742,49 @@ body.electron .app{height:calc(100vh - 32px)}
   text-transform:uppercase;margin-bottom:6px;display:flex;justify-content:space-between;
 }
 .ctx-volume-val{color:var(--accent)}
+/* ══════════════════════════════════
+   GLOBAL RANGE SLIDER — все ползунки в приложении
+══════════════════════════════════ */
+input[type=range]{
+  -webkit-appearance:none;appearance:none;
+  width:100%;height:4px;border-radius:2px;outline:none;cursor:pointer;
+  background:linear-gradient(to right,var(--accent) var(--pct,0%),rgba(255,255,255,0.08) var(--pct,0%));
+  transition:background 0.08s;
+  border:none;padding:0;
+}
 input[type=range].ctx-slider{
-  width:100%;height:4px;-webkit-appearance:none;appearance:none;
-  background:rgba(255,255,255,0.08);border-radius:2px;outline:none;cursor:pointer;
+  /* alias — оставим класс ради совместимости, всё уже задано выше */
 }
-input[type=range].ctx-slider::-webkit-slider-thumb{
-  -webkit-appearance:none;width:14px;height:14px;border-radius:50%;
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;
+  width:16px;height:16px;border-radius:50%;
   background:var(--accent);cursor:pointer;
-  box-shadow:0 0 8px rgba(0,229,255,0.6);
-  transition:box-shadow 0.15s;
+  border:2px solid #0b0c0d;
+  box-shadow:0 0 0 2px rgba(0,229,255,0.25),0 0 10px rgba(0,229,255,0.35);
+  transition:transform 0.15s cubic-bezier(0.34,1.56,0.64,1),box-shadow 0.15s;
 }
-input[type=range].ctx-slider::-webkit-slider-thumb:hover{
-  box-shadow:0 0 16px rgba(0,229,255,0.9);
+input[type=range]::-webkit-slider-thumb:hover{
+  transform:scale(1.25);
+  box-shadow:0 0 0 3px rgba(0,229,255,0.35),0 0 18px rgba(0,229,255,0.55);
 }
-input[type=range].ctx-slider::-webkit-slider-runnable-track{
+input[type=range]:active::-webkit-slider-thumb{
+  transform:scale(1.1);
+  box-shadow:0 0 0 4px rgba(0,229,255,0.4),0 0 22px rgba(0,229,255,0.6);
+}
+input[type=range]::-moz-range-thumb{
+  width:16px;height:16px;border-radius:50%;
+  background:var(--accent);cursor:pointer;border:2px solid #0b0c0d;
+  box-shadow:0 0 0 2px rgba(0,229,255,0.25),0 0 10px rgba(0,229,255,0.35);
+  transition:transform 0.15s cubic-bezier(0.34,1.56,0.64,1),box-shadow 0.15s;
+}
+input[type=range]::-moz-range-track{
   height:4px;border-radius:2px;
-  background:linear-gradient(to right,var(--accent) var(--pct,50%),rgba(255,255,255,0.08) var(--pct,50%));
+  background:rgba(255,255,255,0.08);
 }
+input[type=range]::-moz-range-progress{
+  height:4px;border-radius:2px;background:var(--accent);
+}
+input[type=range]:focus{outline:none}
 .ctx-sep{height:1px;background:rgba(255,255,255,0.05);margin:4px 0}
 
 /* ── LIGHTBOX ── */
@@ -4712,6 +4738,21 @@ function searchMessages(query) {
 </body>
 </html>
 <script>
+// ══ GLOBAL SLIDER FILL — автозаливка всех input[type=range] ══
+(function initSliders(){
+  function syncSlider(el){
+    const mn=parseFloat(el.min)||0,mx=parseFloat(el.max)||100,v=parseFloat(el.value)||0;
+    el.style.setProperty('--pct',((v-mn)/(mx-mn)*100).toFixed(2)+'%');
+  }
+  function attach(el){ syncSlider(el); el.addEventListener('input',()=>syncSlider(el)); }
+  document.querySelectorAll('input[type=range]').forEach(attach);
+  new MutationObserver(ms=>ms.forEach(m=>m.addedNodes.forEach(n=>{
+    if(n.nodeType!==1) return;
+    if(n.matches&&n.matches('input[type=range]')) attach(n);
+    n.querySelectorAll&&n.querySelectorAll('input[type=range]').forEach(attach);
+  }))).observe(document.body,{childList:true,subtree:true});
+})();
+
 // ── ELECTRON MODE ──
 if (window.electronAPI) {
   // Показываем кастомный тайтлбар
