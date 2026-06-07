@@ -1384,6 +1384,8 @@ input[type=range]:focus{outline:none}
 .chat-call-widget.ended .widget-phone-ico{ background:rgba(255,255,255,0.02);border-color:var(--border2);color:var(--text3);animation:none }
 .chat-call-widget.ended .widget-dot{ background:var(--text3);animation:none }
 .chat-call-widget.ended .widget-timer{ color:var(--text3) }
+.chat-call-widget.connected{ border-color:rgba(59,165,92,0.3);background:rgba(59,165,92,0.05) }
+.chat-call-widget.connected::before{ background:#3ba55c }
 
 @media(max-width:768px){
   body{overflow:auto;align-items:flex-start}
@@ -3243,6 +3245,55 @@ function markWidgetEnded() {
   callWidgetEl = null;
 }
 
+// Called when both sides are connected — stop timer, update widget to "In Call"
+function markWidgetConnected() {
+  document.querySelectorAll('.chat-call-widget:not(.ended)').forEach(el => {
+    // Stop the ringing timer
+    if (el._widgetTimer) { clearInterval(el._widgetTimer); el._widgetTimer = null; }
+    // Hide timeout bar
+    const bar = el.querySelector('.widget-timeout-bar');
+    if (bar) bar.style.display = 'none';
+    // Update Join button → In Call (no action needed)
+    const btn = el.querySelector('.widget-join-btn');
+    if (btn) {
+      btn.textContent = 'In Call';
+      btn.style.background = 'rgba(59,165,92,0.15)';
+      btn.style.borderColor = 'rgba(59,165,92,0.4)';
+      btn.style.color = '#3ba55c';
+      btn.style.pointerEvents = 'none';
+      btn.style.cursor = 'default';
+    }
+    // Update status dot → green
+    const dot = el.querySelector('.widget-dot');
+    if (dot) dot.style.background = '#3ba55c';
+    // Update sub text
+    const sub = el.querySelector('.widget-sub span:not(.widget-dot):not(.widget-timer)');
+    if (sub) sub.textContent = 'Connected · ';
+    // Start a new connected timer from 00:00
+    const timerEl = el.querySelector('.widget-timer');
+    if (timerEl) {
+      timerEl.textContent = '00:00';
+      timerEl.style.color = '#3ba55c';
+      let secs = 0;
+      const t = setInterval(() => {
+        if (el.classList.contains('ended')) { clearInterval(t); return; }
+        secs++;
+        const m = String(Math.floor(secs/60)).padStart(2,'0');
+        const s = String(secs%60).padStart(2,'0');
+        timerEl.textContent = m+':'+s;
+      }, 1000);
+      el._widgetTimer = t;
+    }
+    // Update phone icon
+    const ico = el.querySelector('.widget-phone-ico i');
+    if (ico) { ico.className = 'ti ti-phone-call'; }
+    el.querySelector('.widget-phone-ico').style.background = 'rgba(59,165,92,0.15)';
+    el.querySelector('.widget-phone-ico').style.borderColor = 'rgba(59,165,92,0.3)';
+    el.querySelector('.widget-phone-ico').style.color = '#3ba55c';
+    el.classList.add('connected');
+  });
+}
+
 // Callee clicks widget to join
 function joinCallFromWidget(btn) {
   if (!callPeer) return;
@@ -3297,6 +3348,7 @@ function renderCallWidget(data) {
 function acceptIncomingCallFromWidget() {
   if (!callPeer) return;
   acceptIncomingCall();
+  // Widget will update to "In Call" when WebRTC connects
 }
 
 function wsSend(data) {
@@ -3548,6 +3600,8 @@ async function startCallWebRTC(peerUsername, isInitiator) {
       if (bar) bar.classList.add('connected');
       const lbl = document.getElementById('cbar-status-label');
       if (lbl) { lbl.textContent = 'CONNECTED'; lbl.className = 'cbar-status-label connected'; }
+      // Update chat widget — stop ringing timer, show "In Call"
+      markWidgetConnected();
     }
     if (callPc && (callPc.connectionState === 'failed' || callPc.connectionState === 'disconnected')) {
       document.getElementById('call-state-label').textContent = 'Connection lost';
