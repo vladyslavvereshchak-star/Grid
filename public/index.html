@@ -54,6 +54,9 @@ body{
   display:flex;align-items:center;justify-content:center
 }
 
+/* Global text selection color */
+::selection{background:rgba(0,229,255,0.2);color:var(--text)}
+
 ::-webkit-scrollbar{width:3px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:transparent;border-radius:2px;transition:background 0.3s}
@@ -464,7 +467,7 @@ body.electron .app{height:calc(100vh - 32px)}
 .typing-dots{animation:blink 1.2s infinite}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}
 
-.chat-input-area{padding:10px 16px 12px;flex-shrink:0}
+.chat-input-area{padding:10px 16px 12px;flex-shrink:0;position:relative}
 .input-row{
   display:flex;align-items:center;gap:0;
   background:var(--chrome);
@@ -504,7 +507,9 @@ body.electron .app{height:calc(100vh - 32px)}
 /* Emoji Picker */
 #emoji-picker{
   position:absolute;bottom:60px;left:16px;
-  background:#131416;border:1px solid var(--border2);border-radius:10px;
+  background:var(--chrome-bg);
+  border:1px solid var(--border2);border-top:var(--chrome-bevel);
+  border-radius:10px;
   padding:10px;width:300px;max-height:220px;overflow-y:auto;
   box-shadow:0 12px 40px rgba(0,0,0,0.8);z-index:100;
   display:none;
@@ -644,13 +649,14 @@ body.electron .app{height:calc(100vh - 32px)}
 .f-ch{font-size:10px;color:var(--text3)}
 .u-actions{opacity:0;display:flex;gap:3px;transition:opacity 0.15s}
 .u-btn{
-  background:none;border:1px solid var(--border2);border-radius:4px;
+  background:var(--chrome);border:1px solid var(--border2);border-top:var(--chrome-bevel);
+  border-radius:4px;
   color:var(--text3);font-size:9px;padding:2px 7px;cursor:pointer;
-  transition:all 0.15s;font-family:'JetBrains Mono',monospace
+  transition:all 0.25s var(--ease2);font-family:'JetBrains Mono',monospace
 }
-.u-btn:hover{border-color:var(--accent-border);color:var(--accent);background:var(--accent-dim)}
+.u-btn:hover{border-color:var(--accent-border);color:var(--accent);background:var(--accent-dim);box-shadow:var(--chrome-hover)}
 .u-btn.is-friend{opacity:1;color:var(--accent);border-color:var(--accent-border)}
-.u-btn.is-friend:hover{color:var(--red);border-color:#3a1a1a;background:#1a0a10}
+.u-btn.is-friend:hover{color:var(--red);border-color:var(--red-border);background:var(--red-dim)}
 
 /* ══════════════════════════════════
    CALL BAR — ultra-compact titanium strip
@@ -678,7 +684,7 @@ body.electron .app{height:calc(100vh - 32px)}
   opacity:0.4;
 }
 #call-inline-bar.active{ display:flex }
-#call-inline-bar.active:not(.compact-visible){ display:none }
+/* compact-visible handled by JS — no CSS override needed */
 
 /* Signal bars */
 #cbar-voice-status{
@@ -1212,18 +1218,19 @@ body.electron .app{height:calc(100vh - 32px)}
 /* ── CONTEXT MENU ── */
 #call-ctx-menu{
   position:fixed;z-index:9999;
-  background:#121315;border:1px solid rgba(255,255,255,0.08);
-  border-radius:8px;padding:6px 0;min-width:200px;
-  box-shadow:0 12px 40px rgba(0,0,0,0.85);
+  background:var(--chrome-bg);
+  border:1px solid var(--border2);border-top:var(--chrome-bevel);
+  border-radius:9px;padding:6px 0;min-width:210px;
+  box-shadow:0 16px 50px rgba(0,0,0,0.9),0 0 0 0.5px rgba(255,255,255,0.03);
   font-family:'JetBrains Mono',monospace;
   display:none;
 }
 #call-ctx-menu.open{display:block}
 
 .ctx-header{
-  padding:8px 14px 4px;
+  padding:8px 14px 6px;
   font-size:9px;color:rgba(0,229,255,0.5);
-  letter-spacing:0.1em;text-transform:uppercase;
+  letter-spacing:0.12em;text-transform:uppercase;
   border-bottom:1px solid rgba(255,255,255,0.05);
   margin-bottom:4px;
 }
@@ -1231,22 +1238,29 @@ body.electron .app{height:calc(100vh - 32px)}
 .ctx-item{
   display:flex;align-items:center;gap:10px;
   padding:7px 14px;cursor:pointer;
-  font-size:11px;color:#8a9aaa;
-  transition:background 0.12s,color 0.12s;
+  font-size:11px;color:var(--text2);
+  transition:all 0.25s var(--ease2);
   letter-spacing:0.03em;
+  border-left:2px solid transparent;
 }
-.ctx-item:hover{background:rgba(0,229,255,0.06);color:var(--text)}
-.ctx-item.danger:hover{background:rgba(255,68,102,0.08);color:#ff4466}
+.ctx-item:hover{
+  background:var(--accent-dim);color:var(--accent);
+  border-left-color:var(--accent);
+}
+.ctx-item.danger:hover{
+  background:var(--red-dim);color:var(--red);
+  border-left-color:var(--red);
+}
 .ctx-item i{font-size:13px;width:16px;text-align:center;flex-shrink:0}
 
 .ctx-volume-wrap{
-  padding:6px 14px 10px;
+  padding:8px 14px 12px;
   border-bottom:1px solid rgba(255,255,255,0.05);
   margin-bottom:4px;
 }
 .ctx-volume-label{
-  font-size:9px;color:rgba(0,229,255,0.5);letter-spacing:0.08em;
-  text-transform:uppercase;margin-bottom:6px;display:flex;justify-content:space-between;
+  font-size:9px;color:rgba(0,229,255,0.5);letter-spacing:0.1em;
+  text-transform:uppercase;margin-bottom:8px;display:flex;justify-content:space-between;
 }
 .ctx-volume-val{color:var(--accent)}
 /* ══════════════════════════════════
@@ -1324,72 +1338,79 @@ input[type=range]:focus{outline:none}
 }
 #call-profile-modal{
   position:fixed;inset:0;z-index:10000;
-  background:rgba(0,0,0,0.7);
+  background:rgba(0,0,0,0.75);
   display:none;align-items:center;justify-content:center;
+  backdrop-filter:blur(4px);
 }
 #call-profile-modal.open{display:flex}
 .call-profile-card{
-  background:#131416;border:1px solid rgba(255,255,255,0.08);
-  border-radius:12px;padding:32px 36px;min-width:260px;
-  display:flex;flex-direction:column;align-items:center;gap:12px;
+  background:var(--chrome-bg);
+  border:1px solid var(--border2);border-top:var(--chrome-bevel);
+  border-radius:12px;padding:28px 32px;min-width:240px;
+  display:flex;flex-direction:column;align-items:center;gap:10px;
   box-shadow:0 24px 80px rgba(0,0,0,0.9);
   position:relative;
 }
 .call-profile-close{
-  position:absolute;top:12px;right:14px;
-  font-size:14px;color:var(--text3);cursor:pointer;
-  transition:color 0.15s;
+  position:absolute;top:10px;right:12px;
+  font-size:13px;color:var(--text3);cursor:pointer;
+  transition:color 0.2s;
 }
 .call-profile-close:hover{color:var(--red)}
 .call-profile-av{
-  width:72px;height:72px;border-radius:12px;
+  width:68px;height:68px;border-radius:12px;
   display:flex;align-items:center;justify-content:center;
-  font-size:28px;font-weight:700;
+  font-size:26px;font-weight:700;
+  border:2px solid var(--accent-border);
 }
-.call-profile-name{font-size:18px;font-weight:700;color:var(--text);letter-spacing:0.04em}
-.call-profile-tag{font-size:11px;color:var(--text3);letter-spacing:0.06em}
+.call-profile-name{font-size:16px;font-weight:700;color:var(--text);letter-spacing:0.04em}
+.call-profile-tag{font-size:10px;color:var(--text3);letter-spacing:0.08em;text-transform:uppercase}
 .call-profile-status{
-  font-size:10px;color:var(--accent);letter-spacing:0.08em;
+  font-size:9px;color:var(--accent);letter-spacing:0.1em;
   background:var(--accent-dim);padding:3px 12px;border-radius:4px;
-  border:1px solid var(--accent-border);
+  border:1px solid var(--accent-border);text-transform:uppercase;
 }
 
 /* Call controls bar */
 #call-controls{
   position:fixed;bottom:-80px;left:50%;transform:translateX(-50%);
-  background:linear-gradient(180deg,#141518 0%,#0f1011 100%);
-  border:1px solid rgba(255,255,255,0.07);
-  border-radius:12px 12px 0 0;padding:14px 28px;
-  display:flex;align-items:center;gap:16px;
+  background:var(--chrome-bg);
+  border:1px solid var(--border2);border-top:var(--chrome-bevel);
+  border-radius:12px 12px 0 0;padding:12px 24px;
+  display:flex;align-items:center;gap:14px;
   z-index:260;transition:bottom 0.4s var(--ease);
-  box-shadow:0 -10px 40px rgba(0,0,0,0.6);
+  box-shadow:0 -10px 40px rgba(0,0,0,0.7);
   min-width:320px;justify-content:center;
 }
 #call-controls.active{bottom:0}
 
 .call-timer{
-  font-size:12px;color:var(--text2);letter-spacing:0.08em;
+  font-size:11px;color:var(--text2);letter-spacing:0.1em;
   font-family:'JetBrains Mono',monospace;min-width:70px;text-align:center
 }
 
 .call-ctrl-btn{
-  width:40px;height:40px;display:flex;align-items:center;justify-content:center;
-  border-radius:10px;cursor:pointer;font-size:15px;
-  border:1px solid var(--border2);background:rgba(255,255,255,0.03);
-  color:var(--text3);transition:all 0.2s;font-family:'JetBrains Mono',monospace;
+  width:38px;height:38px;display:flex;align-items:center;justify-content:center;
+  border-radius:9px;cursor:pointer;font-size:14px;
+  border:1px solid var(--border2);border-top:var(--chrome-bevel);
+  background:var(--chrome);
+  color:var(--text3);transition:all 0.25s var(--ease2);
 }
-.call-ctrl-btn:hover{background:rgba(255,255,255,0.07);color:var(--text)}
-.call-ctrl-btn.muted{background:rgba(255,68,102,0.08);border-color:rgba(255,68,102,0.25);color:var(--red)}
+.call-ctrl-btn:hover{
+  background:var(--accent-dim);border-color:var(--accent-border);color:var(--accent);
+  box-shadow:var(--chrome-hover);
+}
+.call-ctrl-btn.muted{background:var(--red-dim);border-color:var(--red-border);color:var(--red)}
 
 .call-disconnect{
-  width:44px;height:44px;display:flex;align-items:center;justify-content:center;
-  border-radius:10px;cursor:pointer;font-size:16px;
-  background:rgba(255,68,102,0.1);border:1px solid rgba(255,68,102,0.3);
-  color:var(--red);transition:all 0.2s;
+  width:40px;height:40px;display:flex;align-items:center;justify-content:center;
+  border-radius:9px;cursor:pointer;font-size:15px;
+  background:var(--red-dim);border:1px solid var(--red-border);
+  color:var(--red);transition:all 0.25s var(--ease2);
 }
-.call-disconnect:hover{background:rgba(255,68,102,0.22);box-shadow:0 0 18px rgba(255,68,102,0.2)}
+.call-disconnect:hover{background:rgba(255,60,90,0.16);box-shadow:0 0 16px rgba(255,60,90,0.18)}
 
-.call-sep{width:1px;height:28px;background:var(--border2)}
+.call-sep{width:1px;height:26px;background:var(--border2)}
 
 /* ══════════════════════════════════
    MODAL
@@ -1561,14 +1582,22 @@ input[type=range]:focus{outline:none}
 .pending-req-item{
   display:flex;align-items:center;gap:8px;padding:7px 10px;
   background:rgba(0,229,255,0.03);border:1px solid var(--accent-border);
-  border-radius:5px;margin:3px 5px;
+  border-radius:6px;margin:3px 5px;
 }
 .pending-req-name{flex:1;font-size:11px;color:var(--text2);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pending-req-btns{display:flex;gap:4px;flex-shrink:0}
-.btn-accept-sm{background:var(--accent-dim);border:1px solid var(--accent-border);border-radius:4px;color:var(--accent);font-size:9px;padding:2px 8px;cursor:pointer;font-family:'JetBrains Mono',monospace;transition:all 0.15s;letter-spacing:0.04em}
-.btn-accept-sm:hover{background:rgba(0,229,255,0.15)}
-.btn-decline-sm{background:none;border:1px solid var(--border2);border-radius:4px;color:var(--text3);font-size:9px;padding:2px 8px;cursor:pointer;font-family:'JetBrains Mono',monospace;transition:all 0.15s}
-.btn-decline-sm:hover{color:var(--red);border-color:rgba(255,68,102,0.3)}
+.btn-accept-sm{
+  background:var(--accent-dim);border:1px solid var(--accent-border);border-top:var(--chrome-bevel);
+  border-radius:4px;color:var(--accent);font-size:9px;padding:3px 8px;cursor:pointer;
+  font-family:'JetBrains Mono',monospace;transition:all 0.25s var(--ease2);letter-spacing:0.04em;
+}
+.btn-accept-sm:hover{background:rgba(0,229,255,0.14);box-shadow:var(--chrome-hover)}
+.btn-decline-sm{
+  background:var(--chrome);border:1px solid var(--border2);border-top:var(--chrome-bevel);
+  border-radius:4px;color:var(--text3);font-size:9px;padding:3px 8px;cursor:pointer;
+  font-family:'JetBrains Mono',monospace;transition:all 0.25s var(--ease2);
+}
+.btn-decline-sm:hover{color:var(--red);border-color:var(--red-border);background:var(--red-dim)}
 
 /* ── NAV MODE indicator on dock ── */
 .dock-logo.dm-active{background:var(--accent-dim)}
@@ -1670,21 +1699,23 @@ input[type=range]:focus{outline:none}
   width:100%;transition:width 30s linear;
 }
 
-/* ── CHAT CALL WIDGET (posted in channel after 30s) ── */
-/* ── CALL WIDGET in chat ── */
-/* ── CHAT CALL WIDGET — embedded in message list ── */
+/* ── CHAT CALL WIDGET in chat ── */
 .chat-call-widget{
   display:flex;flex-direction:column;
-  background:linear-gradient(135deg,rgba(0,229,255,0.04) 0%,rgba(0,15,20,0.6) 100%);
-  border:1px solid rgba(0,229,255,0.14);border-radius:12px;
+  background:linear-gradient(135deg,rgba(0,229,255,0.04) 0%,rgba(0,10,14,0.7) 100%);
+  border:1px solid var(--accent-border);border-top:var(--chrome-bevel);
+  border-radius:10px;
   margin:6px 8px;overflow:hidden;
-  transition:all 0.2s;position:relative;
+  transition:all 0.25s var(--ease2);position:relative;
 }
 .chat-call-widget::before{
   content:'';position:absolute;left:0;top:0;bottom:0;
-  width:2px;background:linear-gradient(180deg,var(--accent),rgba(0,229,255,0.2));
+  width:2px;background:linear-gradient(180deg,var(--accent),rgba(0,229,255,0.15));
 }
-.chat-call-widget:not(.ended):hover{background:linear-gradient(135deg,rgba(0,229,255,0.07) 0%,rgba(0,15,20,0.7) 100%)}
+.chat-call-widget:not(.ended):hover{
+  background:linear-gradient(135deg,rgba(0,229,255,0.07) 0%,rgba(0,10,14,0.8) 100%);
+  box-shadow:var(--chrome-hover);
+}
 .widget-main-row{
   display:flex;align-items:center;gap:0;padding:0;
 }
@@ -1709,13 +1740,13 @@ input[type=range]:focus{outline:none}
 .widget-timer{font-size:10px;color:var(--accent);letter-spacing:0.08em;font-family:'JetBrains Mono',monospace}
 .widget-actions{display:flex;gap:6px;align-items:center;padding:0 12px;flex-shrink:0}
 .widget-join-btn{
-  background:var(--accent-dim);border:1px solid var(--accent-border);
+  background:var(--accent-dim);border:1px solid var(--accent-border);border-top:var(--chrome-bevel);
   border-radius:7px;color:var(--accent);font-size:10px;font-weight:700;
   padding:7px 14px;cursor:pointer;font-family:'JetBrains Mono',monospace;
-  letter-spacing:0.07em;transition:all 0.18s cubic-bezier(0.34,1.56,0.64,1);
+  letter-spacing:0.07em;transition:all 0.25s var(--ease2);
   white-space:nowrap;flex-shrink:0;text-transform:uppercase;
 }
-.widget-join-btn:hover{background:rgba(0,229,255,0.16);transform:scale(1.05);box-shadow:0 0 12px rgba(0,229,255,0.15)}
+.widget-join-btn:hover{background:rgba(0,229,255,0.14);box-shadow:var(--chrome-hover)}
 .widget-timeout-bar{height:2px;background:var(--border2);overflow:hidden;}
 .widget-timeout-fill{height:100%;background:linear-gradient(90deg,var(--accent),rgba(0,229,255,0.25));width:100%;transition:width 30s linear}
 .chat-call-widget.ended{ border-color:var(--border2);background:rgba(255,255,255,0.01) }
@@ -1738,7 +1769,25 @@ input[type=range]:focus{outline:none}
   .login-title{font-size:18px}
 }
 
-/* ── GLOBAL SMOOTH ZOOM ON HOVER ── */
+/* ══════════════════════════════════
+   Z-INDEX ISOLATION — стекинг контекст
+   modal(200) > incoming-call(255) > 
+   ctx-menu(9999) > lightbox(99999)
+══════════════════════════════════ */
+#login-screen        { z-index: 9000 }
+.modal-overlay       { z-index: 500  }
+#call-profile-modal  { z-index: 600  }
+#incoming-call-overlay{ z-index: 510 }
+#emoji-picker        { z-index: 110  }
+#call-ctx-menu       { z-index: 9999 }
+#lightbox            { z-index: 99999}
+.notif               { z-index: 5000 }
+.friend-req          { z-index: 5000 }
+.chat-header         { z-index: 4    }
+#call-inline-bar     { z-index: 5    }
+#chat-call-stage     { z-index: 2    }
+
+/* ── GLOBAL SMOOTH TRANSITIONS ── */
 .sub-add-btn,
 .dm-entry,
 .sub-user-item,
@@ -1764,33 +1813,8 @@ input[type=range]:focus{outline:none}
 .login-switch-link,
 .lang-btn,
 .modal-tab {
-  transition: all 0.2s cubic-bezier(0.34,1.56,0.64,1) !important;
+  transition: all 0.25s cubic-bezier(0.4,0,0.2,1) !important;
 }
-
-.sub-add-btn:hover        { transform: scale(1.12) }
-.dm-entry:hover           { transform: scale(1.02) }
-.sub-user-item:hover      { transform: scale(1.02) }
-.call-btn:hover           { transform: scale(1.1) }
-.voice-leave-btn:hover    { transform: scale(1.1) }
-.msg-action-btn:hover     { transform: scale(1.15) }
-.send-btn:hover           { transform: scale(1.2) }
-.friend-card:hover        { transform: scale(1.015) }
-.friend-remove:hover      { transform: scale(1.2) }
-.u-btn:hover              { transform: scale(1.06) }
-.call-ctrl-btn:hover      { transform: scale(1.12) }
-.call-disconnect:hover    { transform: scale(1.08) }
-.call-accept-btn:hover    { transform: scale(1.06) }
-.call-decline-btn:hover   { transform: scale(1.06) }
-.modal-close:hover        { transform: scale(1.12) }
-.hk-badge:hover           { transform: scale(1.08) }
-.btn-accept:hover         { transform: scale(1.06) }
-.btn-decline:hover        { transform: scale(1.06) }
-.btn-accept-sm:hover      { transform: scale(1.08) }
-.btn-decline-sm:hover     { transform: scale(1.08) }
-.chat-call-widget:hover   { transform: scale(1.02) }
-.widget-join-btn:hover    { transform: scale(1.08) }
-.login-switch-link:hover  { transform: scale(1.1) }
-.lang-btn:hover           { transform: scale(1.08) }
 
 /* ── AVATAR IMAGE SUPPORT ── */
 .av-img {
@@ -1807,31 +1831,32 @@ input[type=range]:focus{outline:none}
 .msg-av img, .f-av img, .friend-card-av img, .sub-av-img {
   width:100%; height:100%; object-fit:cover; border-radius:0; display:block;
 }
-.tb-btn{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:5px;cursor:pointer;color:#2a3540;font-size:11px;transition:all .15s}.tb-btn:hover{background:rgba(255,255,255,.06);color:#5a7080}.tb-close:hover{background:rgba(255,68,102,.15)!important;color:#ff4466!important}body.electron{padding-top:32px}
+.tb-btn{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:5px;cursor:pointer;color:var(--text3);font-size:11px;transition:all .2s var(--ease2)}.tb-btn:hover{background:rgba(255,255,255,.06);color:var(--text2)}.tb-close:hover{background:var(--red-dim)!important;color:var(--red)!important}body.electron{padding-top:32px}
 
 /* ══════════════════════════════════
    VOICE PROFILE CARDS
 ══════════════════════════════════ */
 .voice-profile-card {
-  background: rgba(255,255,255,0.02);
+  background: var(--chrome);
   border: 1px solid var(--border2);
+  border-top: var(--chrome-bevel);
   border-radius: 10px;
   padding: 14px 10px;
   cursor: pointer;
   text-align: center;
-  transition: all 0.2s cubic-bezier(0.34,1.56,0.64,1);
+  transition: all 0.25s var(--ease2);
   position: relative;
   overflow: hidden;
 }
 .voice-profile-card:hover {
   border-color: var(--accent-border);
   background: var(--accent-dim);
-  transform: translateY(-2px);
+  box-shadow: var(--chrome-hover);
 }
 .voice-profile-card.active {
   border-color: var(--accent);
   background: var(--accent-dim);
-  box-shadow: var(--accent-glow);
+  box-shadow: 0 0 16px rgba(0,229,255,0.12),inset 0 0 8px rgba(0,229,255,0.05);
 }
 .voice-profile-card.active::after {
   content: '';
@@ -1842,20 +1867,20 @@ input[type=range]:focus{outline:none}
   border-radius: 10px 10px 0 0;
 }
 .vp-icon {
-  font-size: 20px;
+  font-size: 18px;
   color: var(--text3);
-  margin-bottom: 8px;
+  margin-bottom: 7px;
   transition: color 0.2s;
 }
 .voice-profile-card.active .vp-icon,
 .voice-profile-card:hover .vp-icon { color: var(--accent); }
 .vp-name {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   color: var(--text2);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  margin-bottom: 4px;
+  margin-bottom: 3px;
 }
 .voice-profile-card.active .vp-name { color: var(--accent); }
 .vp-desc {
@@ -1897,8 +1922,8 @@ input[type=range]:focus{outline:none}
 </div>
 
 <!-- ELECTRON TITLEBAR -->
-<div id="etb" style="display:none;position:fixed;top:0;left:0;right:0;height:32px;background:#0b0c0d;border-bottom:1px solid rgba(255,255,255,0.04);z-index:9999;-webkit-app-region:drag;align-items:center;justify-content:space-between;padding:0 12px 0 16px">
-  <div style="-webkit-app-region:drag;display:flex;align-items:center;gap:8px"><svg width="14" height="14" viewBox="0 0 22 22" fill="none"><rect x="1" y="1" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.5" fill="none"/><rect x="13" y="1" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.5" fill="none"/><rect x="1" y="13" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.5" fill="none"/><rect x="13" y="13" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.5" fill="none"/><circle cx="11" cy="11" r="2.5" fill="#00E5FF"/></svg><span style="font-size:10px;color:#2a3540;letter-spacing:0.1em;font-family:JetBrains Mono,monospace;text-transform:uppercase">GRID</span></div>
+<div id="etb" style="display:none;position:fixed;top:0;left:0;right:0;height:32px;background:#060708;border-bottom:1px solid rgba(255,255,255,0.04);z-index:9999;-webkit-app-region:drag;align-items:center;justify-content:space-between;padding:0 12px 0 16px">
+  <div style="-webkit-app-region:drag;display:flex;align-items:center;gap:8px"><svg width="14" height="14" viewBox="0 0 22 22" fill="none"><rect x="1" y="1" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.5" fill="none"/><rect x="13" y="1" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.5" fill="none"/><rect x="1" y="13" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.5" fill="none"/><rect x="13" y="13" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.5" fill="none"/><circle cx="11" cy="11" r="2.5" fill="#00E5FF"/></svg><span style="font-size:9px;color:#283340;letter-spacing:0.12em;font-family:JetBrains Mono,monospace;text-transform:uppercase">GRID</span></div>
   <div style="-webkit-app-region:no-drag;display:flex;gap:2px">
     <div onclick="window.electronAPI&&electronAPI.minimize()" class="tb-btn">─</div>
     <div onclick="toggleMaximize()" id="tb-max" class="tb-btn">□</div>
@@ -1942,7 +1967,7 @@ input[type=range]:focus{outline:none}
     <div class="dock-sep"></div>
 
     <!-- Server icons — click to switch to server/channels mode -->
-    <div class="dock-server active" id="dock-server-node01" title="NODE_01" onclick="setNavMode('server')">
+    <div class="dock-server active" id="dock-server-node01" title="GRID · MESSAGES" onclick="setNavMode('server')">
       <svg width="14" height="14" viewBox="0 0 22 22" fill="none">
         <rect x="1" y="1" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.5" fill="none"/>
         <rect x="13" y="1" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.5" fill="none"/>
@@ -1950,7 +1975,7 @@ input[type=range]:focus{outline:none}
         <rect x="13" y="13" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.5" fill="none"/>
         <circle cx="11" cy="11" r="2.5" fill="currentColor"/>
       </svg>
-      <span class="dock-tip">NODE_01</span>
+      <span class="dock-tip">GRID · MESSAGES</span>
     </div>
 
     <!-- Mic / Sound -->
@@ -1989,7 +2014,7 @@ input[type=range]:focus{outline:none}
         <rect x="13" y="13" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.5" fill="none"/>
         <circle cx="11" cy="11" r="2.5" fill="#00E5FF"/>
       </svg>
-      <span class="sub-server-name" id="sub-panel-title">GRID · NODE_01</span>
+      <span class="sub-server-name" id="sub-panel-title">GRID · MESSAGES</span>
     </div>
 
     <!-- SERVER VIEW: channels + voice -->
@@ -2387,8 +2412,8 @@ input[type=range]:focus{outline:none}
           <button class="lang-btn active" onclick="changePassword()">Update Password</button>
         </div>
         <div style="margin-top:18px;padding-top:18px;border-top:1px solid var(--border)">
-          <button onclick="logout()" style="background:rgba(255,68,102,0.06);border:1px solid rgba(255,68,102,0.2);color:#f04466;border-radius:6px;padding:9px 18px;font-size:11px;cursor:pointer;font-family:'JetBrains Mono',monospace;width:100%;transition:all 0.2s;letter-spacing:0.06em;text-transform:uppercase" onmouseover="this.style.background='rgba(255,68,102,0.15)'" onmouseout="this.style.background='rgba(255,68,102,0.06)'">
-            <i class="ti ti-logout"></i> Logout
+          <button onclick="logout()" style="background:var(--red-dim);border:1px solid var(--red-border);border-top:var(--chrome-bevel);color:var(--red);border-radius:7px;padding:9px 18px;font-size:11px;cursor:pointer;font-family:'JetBrains Mono',monospace;width:100%;transition:all 0.25s var(--ease2);letter-spacing:0.08em;text-transform:uppercase" onmouseover="this.style.background='rgba(255,60,90,0.14)';this.style.boxShadow='0 0 14px rgba(255,60,90,0.14)'" onmouseout="this.style.background='var(--red-dim)';this.style.boxShadow='none'">
+            <i class="ti ti-logout"></i> Log Out
           </button>
         </div>
 
@@ -4247,7 +4272,7 @@ function updateVoiceBar() {
   membersEl.innerHTML = '';
   if (!currentVoiceChannel) return;
   [me.name, ...Object.keys(peerConnections)].forEach(username => {
-    const color = username === me.name ? me.color : '#c084fc';
+    const color = username === me.name ? me.color : '#00E5FF';
     const div = document.createElement('div');
     div.className = 'vb-av';
     div.style.cssText = `background:${colorToBg(color)};color:${color}`;
@@ -4475,7 +4500,7 @@ function setNavMode(mode) {
     serverView.style.display = 'flex';
     serverView.style.flexDirection = 'column';
     dmView.style.display = 'none';
-    title.textContent = 'GRID · NODE_01';
+    title.textContent = 'GRID · MESSAGES';
     logoDm.classList.remove('dm-active');
     serverBtn.classList.add('active');
     // If in DM mode, switch back to last channel
