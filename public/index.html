@@ -5376,22 +5376,45 @@ document.addEventListener('keydown', (e) => {
 function applyUIZoom(pct) {
   const v = Math.min(200, Math.max(80, parseInt(pct)));
   localStorage.setItem('grid_ui_zoom', v);
-  const scale = v / 100;
 
-  if (scale === 1) {
-    // Reset everything
-    document.documentElement.style.zoom = '';
-    document.body.style.transform = '';
-    document.body.style.transformOrigin = '';
-    document.body.style.width = '';
-    document.body.style.height = '';
-  } else {
-    // CSS zoom on <html> is the cleanest approach in Chromium/Electron —
-    // but values > 1 cause fixed elements to mis-position in some builds.
-    // Use it anyway — it's the only method that truly reflows like browser zoom.
-    document.documentElement.style.zoom = '';  // clear first to avoid compounding
-    document.documentElement.style.zoom = scale;
+  // Always clear html zoom first (legacy cleanup)
+  document.documentElement.style.zoom = '';
+
+  const app = document.getElementById('app');
+  if (app) {
+    if (v === 100) {
+      app.style.transform = '';
+      app.style.transformOrigin = '';
+      app.style.width = '';
+      app.style.height = '';
+      app.style.position = '';
+    } else {
+      const s = v / 100;
+      // Scale #app from top-left; compensate size so it fills viewport
+      app.style.transformOrigin = 'top left';
+      app.style.transform = 'scale(' + s + ')';
+      app.style.width  = (100 / s).toFixed(4) + 'vw';
+      app.style.height = (100 / s).toFixed(4) + 'vh';
+    }
   }
+
+  // Scale fixed overlays separately (modal, login)
+  ['modal-overlay', 'login-screen', 'etb'].forEach(function(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (v === 100) {
+      el.style.transform = '';
+      el.style.transformOrigin = '';
+      el.style.width = '';
+      el.style.height = '';
+    } else {
+      const s = v / 100;
+      el.style.transformOrigin = 'top left';
+      el.style.transform = 'scale(' + s + ')';
+      el.style.width  = (100 / s).toFixed(4) + 'vw';
+      el.style.height = (100 / s).toFixed(4) + 'vh';
+    }
+  });
 
   const slider = document.getElementById('ui-zoom-slider');
   if (slider) { slider.value = v; updateSliderTrack(slider); }
@@ -5401,25 +5424,22 @@ function applyUIZoom(pct) {
     btn.classList.toggle('active', parseInt(btn.dataset.zoom) === v);
   });
 }
+// Emergency zoom reset: Ctrl+0
+document.addEventListener('keydown', function(e) {
+  if ((e.ctrlKey || e.metaKey) && (e.key === '0' || e.key === 'Numpad0')) {
+    e.preventDefault();
+    applyUIZoom(100);
+  }
+});
 // Восстанавливаем масштаб при загрузке
 (function() {
   document.documentElement.style.zoom = '';
   const saved = localStorage.getItem('grid_ui_zoom');
-  if (!saved) return;
-  // Если Electron — ждём инжекта тайтлбара (он добавляет margin-top: 32px)
-  // чтобы tbH = 32 считался правильно при вычислении высоты
-  if (window.electronAPI) {
-    const tryApply = () => {
-      if (document.getElementById('__grid_titlebar')) {
-        applyUIZoom(parseInt(saved));
-      } else {
-        requestAnimationFrame(tryApply);
-      }
-    };
-    requestAnimationFrame(tryApply);
-  } else {
+  if (!saved || parseInt(saved) === 100) return;
+  // Apply after DOM ready so #app and overlays exist
+  document.addEventListener('DOMContentLoaded', function() {
     applyUIZoom(parseInt(saved));
-  }
+  });
 })();
 
 document.getElementById('username-input').focus();
