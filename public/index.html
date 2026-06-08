@@ -4,6 +4,8 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>GRID</title>
+<!-- Emergency: clear any broken zoom immediately before render -->
+<script>try{localStorage.removeItem('grid_ui_zoom');}catch(e){}</script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css"/>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet"/>
 <style>
@@ -5377,20 +5379,23 @@ function applyUIZoom(pct) {
   const v = Math.min(200, Math.max(80, parseInt(pct)));
   localStorage.setItem('grid_ui_zoom', v);
 
-  // Always clear html zoom first (legacy cleanup)
+  // Clear any legacy html zoom
   document.documentElement.style.zoom = '';
 
   const app = document.getElementById('app');
   if (app) {
     if (v === 100) {
+      app.style.cssText = app.style.cssText
+        .replace(/transform[^;]*;?/g, '')
+        .replace(/transform-origin[^;]*;?/g, '')
+        .replace(/width[^;]*;?/g, '')
+        .replace(/height[^;]*;?/g, '');
       app.style.transform = '';
       app.style.transformOrigin = '';
       app.style.width = '';
       app.style.height = '';
-      app.style.position = '';
     } else {
       const s = v / 100;
-      // Scale #app from top-left; compensate size so it fills viewport
       app.style.transformOrigin = 'top left';
       app.style.transform = 'scale(' + s + ')';
       app.style.width  = (100 / s).toFixed(4) + 'vw';
@@ -5398,9 +5403,10 @@ function applyUIZoom(pct) {
     }
   }
 
-  // Scale fixed overlays separately (modal, login)
-  ['modal-overlay', 'login-screen', 'etb'].forEach(function(id) {
-    const el = document.getElementById(id);
+  // Modal and login scale the same way (they are fixed, need separate scaling)
+  var overlays = ['modal-overlay', 'login-screen'];
+  overlays.forEach(function(id) {
+    var el = document.getElementById(id);
     if (!el) return;
     if (v === 100) {
       el.style.transform = '';
@@ -5408,7 +5414,7 @@ function applyUIZoom(pct) {
       el.style.width = '';
       el.style.height = '';
     } else {
-      const s = v / 100;
+      var s = v / 100;
       el.style.transformOrigin = 'top left';
       el.style.transform = 'scale(' + s + ')';
       el.style.width  = (100 / s).toFixed(4) + 'vw';
@@ -5416,9 +5422,9 @@ function applyUIZoom(pct) {
     }
   });
 
-  const slider = document.getElementById('ui-zoom-slider');
+  var slider = document.getElementById('ui-zoom-slider');
   if (slider) { slider.value = v; updateSliderTrack(slider); }
-  const disp = document.getElementById('zoom-val-display');
+  var disp = document.getElementById('zoom-val-display');
   if (disp) disp.textContent = v + '%';
   document.querySelectorAll('.zoom-preset-btn').forEach(function(btn) {
     btn.classList.toggle('active', parseInt(btn.dataset.zoom) === v);
@@ -5431,12 +5437,11 @@ document.addEventListener('keydown', function(e) {
     applyUIZoom(100);
   }
 });
-// Восстанавливаем масштаб при загрузке
+// Restore zoom on load
 (function() {
   document.documentElement.style.zoom = '';
-  const saved = localStorage.getItem('grid_ui_zoom');
+  var saved = localStorage.getItem('grid_ui_zoom');
   if (!saved || parseInt(saved) === 100) return;
-  // Apply after DOM ready so #app and overlays exist
   document.addEventListener('DOMContentLoaded', function() {
     applyUIZoom(parseInt(saved));
   });
