@@ -849,18 +849,23 @@ body.electron .app{height:calc(100vh - 32px)}
   gap:10px;
   padding:16px 12px;
   min-width:0;
-  /* Voice speaking ring via keyframe */
-  transition:border-color 0.15s,box-shadow 0.15s;
+  transition:border-color 0.3s,box-shadow 0.3s;
 }
+/* Speaking: subtle border glow — waveform canvas does the heavy lifting */
 .chat-call-person.speaking{
-  border-color:var(--accent);
-  box-shadow:0 0 0 2px rgba(0,229,255,0.2),0 0 20px rgba(0,229,255,0.08);
+  border-color:rgba(0,229,255,0.35);
+  box-shadow:0 0 18px rgba(0,229,255,0.07);
 }
-@keyframes voiceBreathe{
-  0%,100%{box-shadow:0 0 0 0 rgba(0,229,255,0),0 0 8px rgba(0,229,255,0.05)}
-  50%{box-shadow:0 0 0 4px rgba(0,229,255,0.1),0 0 24px rgba(0,229,255,0.15)}
+/* Equalizer canvas */
+.speak-viz{
+  display:block;
+  width:100%;
+  height:32px;
+  border-radius:4px;
+  flex-shrink:0;
+  /* idle: subtle baseline */
+  opacity:0.9;
 }
-.chat-call-person.speaking{animation:voiceBreathe 1.8s ease-in-out infinite}
 .chat-call-avatar{
   width:68px;height:68px;border-radius:10px;
   display:flex;align-items:center;justify-content:center;
@@ -2155,11 +2160,13 @@ input[type=range]:focus{outline:none}
         <div class="chat-call-people">
           <div class="chat-call-person" id="chat-call-me-card">
             <div class="chat-call-avatar" id="chat-call-avatar-me">?</div>
+            <canvas class="speak-viz" id="viz-me"></canvas>
             <div class="chat-call-name" id="chat-call-name-me">you</div>
             <div class="chat-call-sub" id="chat-call-sub-me">you</div>
           </div>
           <div class="chat-call-person" id="chat-call-peer-card">
             <div class="chat-call-avatar" id="chat-call-avatar-peer">?</div>
+            <canvas class="speak-viz" id="viz-peer"></canvas>
             <div class="chat-call-name" id="chat-call-name-peer">friend</div>
             <div class="chat-call-sub" id="chat-call-sub-peer">connected</div>
           </div>
@@ -5178,8 +5185,144 @@ const callPeerAudioCtx = {}; // username → AudioContext
 // Speaking detection animation frames
 let speakAnimMe   = null;
 let speakAnimPeer = null;
+// Unified RAF for canvas waveform
+let speakAnimFrame  = null;
+let speakAnalyserMe  = null, speakBufMe  = null;
+let speakAnalyserPeer = null, speakBufPeer = null;
 
-// Context menu target
+// ── Canvas equalizer draw ──────────────────────────────────────────
+// bars: 20 vertical freq bars centered vertically, gradient, gamma corrected
+function drawViz(canvas, buf, isMuted, color) {
+  const W = canvas.width, H = canvas.height;
+  const c = canvas.getContext('2d');
+  c.clearRect(0, 0, W, H);
+
+  const BAR_COUNT = 20;
+  const GAP = Math.max(1, Math.round(W * 0.025));
+  const barW = Math.max(2, (W - GAP * (BAR_COUNT - 1)) / BAR_COUNT);
+
+  // Sample voice frequency range: bins 4-100 (approx 100Hz-4kHz at 48k/256fft)
+  const startBin = 4, endBin = Math.min((buf ? buf.length : 128) - 1, 100);
+
+  for (let i = 0; i < BAR_COUNT; i++) {
+    const binIdx = buf
+      ? Math.round(startBin + (i / (BAR_COUNT - 1)) * (endBin - startBin))
+      : 0;
+    let raw = buf ? buf[binIdx] / 255 : 0;
+    if (isMuted) raw = 0;
+
+    // gamma curve — makes quiet sounds more visible, loud ones punchy
+    let val = Math.pow(raw, 0.6);
+
+    // minimum stub so the bars are always visible (idle flat line)
+    const minH = 2;
+    const h = Math.max(minH, val * (H - minH));
+    const x = i * (barW + GAP);
+    const y = (H - h) / 2;       // center bars vertically like a real EQ
+
+    // Gradient: bright cyan top → deep blue bottom
+    const peakA  = isMuted ? 0.1 : Math.min(0.92, val * 0.8 + 0.12);
+    const baseA  = isMuted ? 0.05 : Math.min(0.25, val * 0.2 + 0.04);
+    const grad = c.createLinearGradient(0, y, 0, y + h);
+    grad.addColorStop(0,   `rgba(0,229,255,${peakA})`);
+    grad.addColorStop(0.5, `rgba(0,200,240,${peakA * 0.55})`);
+    grad.addColorStop(1,   `rgba(0,100,200,${baseA})`);
+    c.fillStyle = grad;
+
+    c.beginPath();
+    if (c.roundRect) c.roundRect(x, y, barW, h, Math.min(2, barW * 0.4));
+    else             c.rect(x, y, barW, h);
+    c.fill();
+  }
+}
+
+// Set canvas pixel size matching its CSS layout size
+function resizeViz(canvas) {
+  if (!canvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width  = Math.round(rect.width  * dpr) || 160;
+  canvas.height = Math.round(rect.height * dpr) || 32;
+}
+
+// ── Speaking detection via Web Audio API ──
+function startSpeakingDetection() {
+  stopSpeakingDetection();
+
+  const vizMe   = document.getElementById('viz-me');
+  const vizPeer = document.getElementById('viz-peer');
+  resizeViz(vizMe);
+  resizeViz(vizPeer);
+
+  // My mic → analyser
+  if (callStream) {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const src = ctx.createMediaStreamSource(callStream);
+      speakAnalyserMe = ctx.createAnalyser();
+      speakAnalyserMe.fftSize = 256;
+      speakAnalyserMe.smoothingTimeConstant = 0.72;
+      src.connect(speakAnalyserMe);
+      speakBufMe = new Uint8Array(speakAnalyserMe.frequencyBinCount);
+    } catch(e) { console.warn('speakAnalyserMe failed', e); }
+  }
+
+  // Peer audio → analyser (tap outDest stream set as srcObject)
+  const peerAudio = document.getElementById('call-remote-audio');
+  if (peerAudio && peerAudio.srcObject) {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const src = ctx.createMediaStreamSource(peerAudio.srcObject);
+      speakAnalyserPeer = ctx.createAnalyser();
+      speakAnalyserPeer.fftSize = 256;
+      speakAnalyserPeer.smoothingTimeConstant = 0.72;
+      src.connect(speakAnalyserPeer);
+      speakBufPeer = new Uint8Array(speakAnalyserPeer.frequencyBinCount);
+    } catch(e) { console.warn('speakAnalyserPeer failed', e); }
+  }
+
+  // Unified RAF loop — both canvases in one frame
+  function tick() {
+    speakAnimFrame = requestAnimationFrame(tick);
+
+    // ── ME ──
+    if (speakAnalyserMe && speakBufMe) {
+      speakAnalyserMe.getByteFrequencyData(speakBufMe);
+    }
+    if (vizMe) drawViz(vizMe, speakBufMe, callMuted);
+
+    // Update "speaking" status text + card border
+    if (speakBufMe) {
+      const avg = speakBufMe.slice(4, 60).reduce((a, b) => a + b, 0) / 56;
+      const isSpeaking = avg > 10 && !callMuted;
+      const meCard = document.getElementById('chat-call-me-card');
+      if (meCard) meCard.classList.toggle('speaking', isSpeaking);
+      const st = document.getElementById('chat-call-sub-me');
+      if (st) { st.textContent = callMuted ? 'muted' : (isSpeaking ? 'speaking' : 'you'); }
+      // Also update legacy inline bar rings
+      const wrap = document.getElementById('call-av-wrap-me');
+      if (wrap) wrap.classList.toggle('speaking', isSpeaking);
+    }
+
+    // ── PEER ──
+    if (speakAnalyserPeer && speakBufPeer) {
+      speakAnalyserPeer.getByteFrequencyData(speakBufPeer);
+    }
+    if (vizPeer) drawViz(vizPeer, speakBufPeer, callSoundMuted);
+
+    if (speakBufPeer) {
+      const avgP = speakBufPeer.slice(4, 60).reduce((a, b) => a + b, 0) / 56;
+      const isPeerSpeaking = avgP > 10 && !callSoundMuted;
+      const peerCard = document.getElementById('chat-call-peer-card');
+      if (peerCard) peerCard.classList.toggle('speaking', isPeerSpeaking);
+      const stP = document.getElementById('chat-call-sub-peer');
+      if (stP) { stP.textContent = callSoundMuted ? 'deafened' : (isPeerSpeaking ? 'speaking' : 'connected'); }
+      const wrapP = document.getElementById('call-av-wrap-peer');
+      if (wrapP) wrapP.classList.toggle('speaking', isPeerSpeaking);
+    }
+  }
+  tick();
+}
 let ctxTarget = null; // 'me' | 'peer'
 
 // ── Show connected dual-card UI ──
@@ -5216,74 +5359,20 @@ function hideConnectedUI() {
   stopSpeakingDetection();
 }
 
-// ── Speaking detection via Web Audio API ──
-function startSpeakingDetection() {
-  stopSpeakingDetection();
-
-  // My mic
-  if (callStream) {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const src = ctx.createMediaStreamSource(callStream);
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = 512;
-    src.connect(analyser);
-    const buf = new Uint8Array(analyser.frequencyBinCount);
-    let speaking = false;
-    function tick() {
-      speakAnimMe = requestAnimationFrame(tick);
-      analyser.getByteFrequencyData(buf);
-      const avg = buf.slice(0, 60).reduce((a,b)=>a+b,0) / 60;
-      const isSpeaking = avg > 12;
-      const wrap = document.getElementById('call-av-wrap-me');
-      const st = document.getElementById('call-status-me');
-      if (wrap) {
-        wrap.classList.toggle('speaking', isSpeaking && !callMuted);
-        // Dynamic ring opacity based on volume
-        const rings = wrap.querySelectorAll('.call-participant-speaking-ring');
-        const vol = Math.min(avg / 80, 1);
-        if (rings[0]) rings[0].style.opacity = isSpeaking && !callMuted ? Math.min(vol * 2, 1) : 0;
-        if (rings[1]) rings[1].style.opacity = isSpeaking && !callMuted ? Math.min(vol * 1.4, 0.7) : 0;
-        if (rings[2]) rings[2].style.opacity = isSpeaking && !callMuted ? Math.min(vol, 0.4) : 0;
-      }
-      if (st) { st.textContent = (isSpeaking && !callMuted) ? 'speaking...' : 'you'; st.className = 'call-participant-status' + ((isSpeaking&&!callMuted)?' speaking':''); }
-      speaking = isSpeaking;
-    }
-    tick();
-  }
-
-  // Peer audio
-  const peerAudio = document.getElementById('call-remote-audio');
-  if (peerAudio && peerAudio.srcObject) {
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const src = ctx.createMediaStreamSource(peerAudio.srcObject);
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 512;
-      src.connect(analyser);
-      const buf = new Uint8Array(analyser.frequencyBinCount);
-      let speaking = false;
-      function tick() {
-        speakAnimPeer = requestAnimationFrame(tick);
-        analyser.getByteFrequencyData(buf);
-        const avg = buf.slice(0, 60).reduce((a,b)=>a+b,0) / 60;
-        const isSpeaking = avg > 12;
-        if (isSpeaking !== speaking) {
-          speaking = isSpeaking;
-          const wrap = document.getElementById('call-av-wrap-peer');
-          const st = document.getElementById('call-status-peer');
-          if (wrap) wrap.classList.toggle('speaking', speaking);
-          if (st) { st.textContent = speaking ? 'speaking...' : 'connected'; st.className = 'call-participant-status' + (speaking?' speaking':''); }
-        }
-      }
-      tick();
-    } catch(e) {}
-  }
-}
-
-function stopSpeakingDetection() {
+// ── Context menu ──
+  if (speakAnimFrame) { cancelAnimationFrame(speakAnimFrame); speakAnimFrame = null; }
+  // Legacy compat
   if (speakAnimMe)   { cancelAnimationFrame(speakAnimMe);   speakAnimMe = null; }
   if (speakAnimPeer) { cancelAnimationFrame(speakAnimPeer); speakAnimPeer = null; }
-  ['call-av-wrap-me','call-av-wrap-peer'].forEach(id => {
+  speakAnalyserMe = null; speakBufMe = null;
+  speakAnalyserPeer = null; speakBufPeer = null;
+  // Clear canvases — draw flat idle state
+  ['viz-me','viz-peer'].forEach(id => {
+    const c = document.getElementById(id);
+    if (c) { const ctx = c.getContext('2d'); if (ctx) ctx.clearRect(0, 0, c.width, c.height); }
+  });
+  // Remove speaking classes
+  ['chat-call-me-card','chat-call-peer-card','call-av-wrap-me','call-av-wrap-peer'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.classList.remove('speaking');
   });
