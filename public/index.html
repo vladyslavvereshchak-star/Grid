@@ -54,6 +54,114 @@ body{
   display:flex;align-items:center;justify-content:center
 }
 
+/* ══════════════════════════════════
+   GLASS MODE  (body.glass)
+══════════════════════════════════ */
+
+/* Glass mode shifts BG slightly so panels read as frosted glass over it */
+body.glass { background: #030405; }
+
+/* Glass variables — overridden per slider value via JS */
+body.glass {
+  --glass-blur: 18px;
+  --glass-bg: rgba(10,12,16,0.55);
+  --glass-bg-dark: rgba(6,8,10,0.65);
+  --glass-border: rgba(0,229,255,0.10);
+  --glass-bevel: rgba(255,255,255,0.07);
+}
+
+/* Dock */
+body.glass .grid-dock {
+  background: var(--glass-bg-dark);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.5);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.5);
+  border-right: 1px solid var(--glass-border);
+}
+
+/* Left sub panel */
+body.glass .grid-sub-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+  border-right: 1px solid var(--glass-border);
+}
+
+/* Chat panel */
+body.glass .panel-chat {
+  background: transparent;
+}
+body.glass .chat-header {
+  background: var(--glass-bg-dark);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border-bottom: 1px solid var(--glass-border);
+}
+body.glass .chat-input-area {
+  background: var(--glass-bg-dark);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border-top: 1px solid var(--glass-border);
+}
+body.glass #chat-call-stage {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+}
+/* Messages area — keep transparent so lava shows through */
+body.glass .chat-messages {
+  background: transparent;
+}
+/* Message bubbles — slight glass tint */
+body.glass .msg-text {
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,255,255,0.04);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+body.glass .msg-text.own {
+  background: rgba(0,229,255,0.04);
+  border-color: rgba(0,229,255,0.09);
+}
+
+/* Right profile panel */
+body.glass .panel-profile {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+  border-left: 1px solid var(--glass-border);
+}
+body.glass .profile-banner {
+  background: linear-gradient(135deg, rgba(0,229,255,0.07), rgba(123,97,255,0.04) 70%);
+}
+
+/* Modal */
+body.glass .modal {
+  background: var(--glass-bg-dark);
+  backdrop-filter: blur(32px) saturate(1.6);
+  -webkit-backdrop-filter: blur(32px) saturate(1.6);
+  border: 1px solid var(--glass-border);
+}
+
+/* App background gets the lava canvas */
+body.glass #app-lava-canvas {
+  display: block;
+}
+#app-lava-canvas {
+  display: none;
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+/* Make app sit above the fixed canvas */
+body.glass .app {
+  position: relative;
+  z-index: 1;
+}
+
+
 /* Global text selection color */
 ::selection{background:rgba(0,229,255,0.2);color:var(--text)}
 
@@ -367,14 +475,7 @@ body.electron .app{height:calc(100vh - 32px)}
 .grid-resizer:hover,.grid-resizer.dragging{background:var(--accent-border)}
 
 /* ── CHAT ── */
-.panel-chat{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;overflow:hidden}
-
-#chat-lava-canvas{
-  position:absolute;inset:0;width:100%;height:100%;
-  pointer-events:none;z-index:0;opacity:0.45
-}
-
-.chat-header,#chat-call-stage,.chat-messages,.chat-input-area,#voice-bar{position:relative;z-index:1}
+.panel-chat{flex:1;display:flex;flex-direction:column;min-width:0;position:relative}
 
 .chat-header{
   display:flex;align-items:center;gap:10px;padding:0 18px;height:46px;
@@ -1946,6 +2047,9 @@ input[type=range]:focus{outline:none}
   </div>
 </div>
 
+<!-- APP GLASS LAVA CANVAS (fixed, behind everything, only shown in glass mode) -->
+<canvas id="app-lava-canvas"></canvas>
+
 <!-- ELECTRON TITLEBAR -->
 <div id="etb" style="display:none;position:fixed;top:0;left:0;right:0;height:32px;background:#060708;border-bottom:1px solid rgba(255,255,255,0.04);z-index:9999;-webkit-app-region:drag;align-items:center;justify-content:space-between;padding:0 12px 0 16px">
   <div style="-webkit-app-region:drag;display:flex;align-items:center;gap:8px"><svg width="14" height="14" viewBox="0 0 22 22" fill="none"><rect x="1" y="1" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.5" fill="none"/><rect x="13" y="1" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.5" fill="none"/><rect x="1" y="13" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.5" fill="none"/><rect x="13" y="13" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.5" fill="none"/><circle cx="11" cy="11" r="2.5" fill="#00E5FF"/></svg><span style="font-size:9px;color:#283340;letter-spacing:0.12em;font-family:JetBrains Mono,monospace;text-transform:uppercase">GRID</span></div>
@@ -2142,7 +2246,6 @@ input[type=range]:focus{outline:none}
 
   <!-- CHAT PANEL -->
   <div class="panel-chat">
-    <canvas id="chat-lava-canvas"></canvas>
     <div id="voice-bar">
       <i class="ti ti-volume voice-bar-icon"></i>
       <span class="voice-bar-name" id="voice-bar-name">voice-1</span>
@@ -2654,68 +2757,115 @@ input[type=range]:focus{outline:none}
         </div>
       </div>
       <div class="pane" id="pane-appearance">
-        <div class="modal-section-title">Background Effect</div>
-        <div style="margin-bottom:20px">
-          <div style="font-size:11px;color:var(--text2);margin-bottom:14px;line-height:1.6">
-            Lava lamp — animated glowing blobs behind the login screen and chat.
-          </div>
-          <div style="display:flex;flex-direction:column;gap:10px">
+        <div class="modal-section-title">Interface Theme</div>
 
-            <!-- ON/OFF toggle -->
-            <div class="setting-row" style="align-items:center">
-              <div>
-                <div class="setting-label">Lava lamp effect</div>
-                <div style="font-size:10px;color:var(--text3);margin-top:2px">Animated background blobs</div>
+        <!-- Mode cards -->
+        <div style="display:flex;gap:8px;margin-bottom:20px">
+
+          <!-- Default -->
+          <div id="theme-card-default" onclick="setThemeMode('default')"
+            style="flex:1;border-radius:10px;border:1.5px solid var(--accent-border);
+                   background:var(--accent-dim);padding:12px 10px;cursor:pointer;
+                   transition:all 0.2s;text-align:center">
+            <div style="width:100%;height:38px;border-radius:6px;background:linear-gradient(135deg,#0d0e10,#111214);
+                         border:1px solid rgba(255,255,255,0.06);margin-bottom:8px;display:flex;align-items:center;
+                         justify-content:center;gap:4px">
+              <div style="width:8px;height:24px;border-radius:2px;background:#131416;border:1px solid rgba(255,255,255,0.06)"></div>
+              <div style="flex:1;height:24px;border-radius:2px;background:#0c0d0e"></div>
+              <div style="width:10px;height:24px;border-radius:2px;background:#101113"></div>
+            </div>
+            <div style="font-size:10px;font-weight:700;color:var(--accent);letter-spacing:0.08em">DEFAULT</div>
+            <div style="font-size:9px;color:var(--text3);margin-top:2px">Solid panels</div>
+          </div>
+
+          <!-- Glass -->
+          <div id="theme-card-glass" onclick="setThemeMode('glass')"
+            style="flex:1;border-radius:10px;border:1.5px solid var(--border2);
+                   background:transparent;padding:12px 10px;cursor:pointer;
+                   transition:all 0.2s;text-align:center">
+            <div style="width:100%;height:38px;border-radius:6px;
+                         background:linear-gradient(135deg,rgba(0,229,255,0.08),rgba(123,97,255,0.05));
+                         border:1px solid rgba(0,229,255,0.12);margin-bottom:8px;display:flex;align-items:center;
+                         justify-content:center;gap:4px;position:relative;overflow:hidden">
+              <div style="position:absolute;inset:0;background:radial-gradient(circle at 30% 50%,rgba(0,229,255,0.15),transparent 60%),
+                           radial-gradient(circle at 75% 30%,rgba(123,97,255,0.12),transparent 50%)"></div>
+              <div style="width:8px;height:24px;border-radius:2px;background:rgba(10,12,16,0.5);
+                           border:1px solid rgba(0,229,255,0.1);position:relative;z-index:1"></div>
+              <div style="flex:1;height:24px;border-radius:2px;background:transparent;position:relative;z-index:1"></div>
+              <div style="width:10px;height:24px;border-radius:2px;background:rgba(10,12,16,0.45);
+                           border:1px solid rgba(0,229,255,0.1);position:relative;z-index:1"></div>
+            </div>
+            <div style="font-size:10px;font-weight:700;color:var(--text2);letter-spacing:0.08em">GLASS</div>
+            <div style="font-size:9px;color:var(--text3);margin-top:2px">Frosted + lava</div>
+          </div>
+
+        </div>
+
+        <!-- Glass settings — only visible in glass mode -->
+        <div id="glass-settings" style="display:none;flex-direction:column;gap:0">
+
+          <div style="padding-top:16px;border-top:1px solid var(--border);margin-bottom:16px">
+            <div class="modal-section-title" style="margin-bottom:14px">Glass Options</div>
+
+            <!-- Blur slider -->
+            <div style="margin-bottom:16px">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px">
+                <div style="font-size:11px;color:var(--text2);letter-spacing:0.04em">Panel blur</div>
+                <span style="font-size:10px;color:var(--accent);min-width:32px;text-align:right" id="glass-blur-val">18px</span>
               </div>
-              <label class="toggle-sw" style="margin-left:auto">
-                <input type="checkbox" id="lava-toggle" checked onchange="applyLavaSettings()">
-                <span class="toggle-track"></span>
-              </label>
+              <input type="range" class="ctx-slider" id="glass-blur-slider"
+                min="4" max="40" value="18" step="2" style="width:100%"
+                oninput="applyGlassOptions()">
+              <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text3);margin-top:3px">
+                <span>Minimal</span><span>Heavy</span>
+              </div>
             </div>
 
-            <!-- Speed -->
-            <div id="lava-controls" style="display:flex;flex-direction:column;gap:12px;padding-top:4px">
-              <div>
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-                  <div style="font-size:11px;color:var(--text2);letter-spacing:0.04em">Speed</div>
-                  <span style="font-size:10px;color:var(--accent)" id="lava-speed-val">1×</span>
-                </div>
-                <input type="range" class="ctx-slider" id="lava-speed" min="1" max="10" value="5" step="1"
-                  style="width:100%" oninput="applyLavaSettings()">
-                <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text3);margin-top:3px">
-                  <span>Slow</span><span>Fast</span>
-                </div>
+            <!-- Opacity slider -->
+            <div style="margin-bottom:16px">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px">
+                <div style="font-size:11px;color:var(--text2);letter-spacing:0.04em">Panel opacity</div>
+                <span style="font-size:10px;color:var(--accent);min-width:32px;text-align:right" id="glass-opacity-val">55%</span>
               </div>
-
-              <!-- Intensity -->
-              <div>
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-                  <div style="font-size:11px;color:var(--text2);letter-spacing:0.04em">Intensity</div>
-                  <span style="font-size:10px;color:var(--accent)" id="lava-intensity-val">50%</span>
-                </div>
-                <input type="range" class="ctx-slider" id="lava-intensity" min="0" max="100" value="50" step="5"
-                  style="width:100%" oninput="applyLavaSettings()">
-                <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text3);margin-top:3px">
-                  <span>Subtle</span><span>Vivid</span>
-                </div>
+              <input type="range" class="ctx-slider" id="glass-opacity-slider"
+                min="20" max="90" value="55" step="5" style="width:100%"
+                oninput="applyGlassOptions()">
+              <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text3);margin-top:3px">
+                <span>Transparent</span><span>Solid</span>
               </div>
+            </div>
 
-              <!-- Blur -->
-              <div>
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-                  <div style="font-size:11px;color:var(--text2);letter-spacing:0.04em">Card blur</div>
-                  <span style="font-size:10px;color:var(--accent)" id="lava-blur-val">28px</span>
-                </div>
-                <input type="range" class="ctx-slider" id="lava-blur" min="0" max="60" value="28" step="2"
-                  style="width:100%" oninput="applyLavaSettings()">
-                <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text3);margin-top:3px">
-                  <span>Sharp</span><span>Max blur</span>
-                </div>
+            <!-- Lava speed -->
+            <div style="margin-bottom:16px">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px">
+                <div style="font-size:11px;color:var(--text2);letter-spacing:0.04em">Blob speed</div>
+                <span style="font-size:10px;color:var(--accent);min-width:32px;text-align:right" id="glass-speed-val">1×</span>
+              </div>
+              <input type="range" class="ctx-slider" id="glass-speed-slider"
+                min="1" max="10" value="5" step="1" style="width:100%"
+                oninput="applyGlassOptions()">
+              <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text3);margin-top:3px">
+                <span>Slow</span><span>Fast</span>
+              </div>
+            </div>
+
+            <!-- Lava intensity -->
+            <div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px">
+                <div style="font-size:11px;color:var(--text2);letter-spacing:0.04em">Blob intensity</div>
+                <span style="font-size:10px;color:var(--accent);min-width:32px;text-align:right" id="glass-intensity-val">50%</span>
+              </div>
+              <input type="range" class="ctx-slider" id="glass-intensity-slider"
+                min="10" max="100" value="50" step="5" style="width:100%"
+                oninput="applyGlassOptions()">
+              <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text3);margin-top:3px">
+                <span>Subtle</span><span>Vivid</span>
               </div>
             </div>
 
           </div>
         </div>
+
       </div>
     </div>
   </div>
@@ -6211,10 +6361,234 @@ window.openModal = function() {
   }, 50);
 };
 
-// ══════════════════════════════════════════════════════
-// LAVA LAMP ENGINE — glowing blobs for login + chat bg
-// ══════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════
+// LAVA LAMP ENGINE
+// ══════════════════════════════════════════════════════════
 const LavaLamp = (function(){
+  'use strict';
+
+  const PALETTE = [
+    {r:0,  g:229,b:255},
+    {r:0,  g:229,b:255},
+    {r:123,g:97, b:255},
+    {r:0,  g:200,b:180},
+    {r:0,  g:229,b:255},
+  ];
+
+  const cfg = { speedMult:1.0, intensity:0.5 };
+
+  function makeBlob(W, H, str) {
+    const c = PALETTE[Math.floor(Math.random()*PALETTE.length)];
+    const minR = Math.min(W,H)*0.18*str, maxR = Math.min(W,H)*0.44*str;
+    return {
+      x:Math.random()*W, y:Math.random()*H,
+      vx:(Math.random()-0.5)*0.18*str, vy:(Math.random()-0.5)*0.18*str,
+      r:c.r, g:c.g, b:c.b,
+      radius: minR+Math.random()*(maxR-minR),
+      bPh:Math.random()*Math.PI*2, bSp:0.004+Math.random()*0.006, bAmp:0.08+Math.random()*0.12,
+      aPh:Math.random()*Math.PI*2, aSp:0.003+Math.random()*0.004, aBase:0.30+Math.random()*0.30, aAmp:0.12,
+    };
+  }
+
+  const canvases = [];  // {el, ctx, blobs, W, H, str, frame}
+
+  function mount(canvasEl, count, str) {
+    if (!canvasEl) return;
+    const ctx = canvasEl.getContext('2d');
+    const inst = {el:canvasEl, ctx, blobs:[], W:0, H:0, str, frame:0, count};
+    canvases.push(inst);
+    function resize() {
+      const p = canvasEl.parentElement;
+      inst.W = canvasEl.width  = p ? (p.getBoundingClientRect().width  || window.innerWidth)  : window.innerWidth;
+      inst.H = canvasEl.height = p ? (p.getBoundingClientRect().height || window.innerHeight) : window.innerHeight;
+      inst.blobs = Array.from({length:count}, ()=>makeBlob(inst.W,inst.H,str));
+    }
+    let rt; new ResizeObserver(()=>{clearTimeout(rt);rt=setTimeout(resize,80)}).observe(canvasEl.parentElement||document.body);
+    resize();
+  }
+
+  let running = false;
+  function loop() {
+    for (const inst of canvases) {
+      const {ctx,W,H} = inst;
+      ctx.clearRect(0,0,W,H);
+      inst.frame++;
+      for (const b of inst.blobs) {
+        b.x += b.vx*cfg.speedMult; b.y += b.vy*cfg.speedMult;
+        const pad=b.radius*0.5;
+        if(b.x<-pad){b.x=-pad;b.vx=Math.abs(b.vx);}  if(b.x>W+pad){b.x=W+pad;b.vx=-Math.abs(b.vx);}
+        if(b.y<-pad){b.y=-pad;b.vy=Math.abs(b.vy);}  if(b.y>H+pad){b.y=H+pad;b.vy=-Math.abs(b.vy);}
+        const R = b.radius*(1+Math.sin(inst.frame*b.bSp+b.bPh)*b.bAmp);
+        const a = Math.min(1,(b.aBase+Math.sin(inst.frame*b.aSp+b.aPh)*b.aAmp)*cfg.intensity*2);
+        const g = ctx.createRadialGradient(b.x,b.y,0,b.x,b.y,R);
+        g.addColorStop(0,   `rgba(${b.r},${b.g},${b.b},${a.toFixed(3)})`);
+        g.addColorStop(0.45,`rgba(${b.r},${b.g},${b.b},${(a*0.55).toFixed(3)})`);
+        g.addColorStop(1,   `rgba(${b.r},${b.g},${b.b},0)`);
+        ctx.beginPath(); ctx.arc(b.x,b.y,R,0,Math.PI*2);
+        ctx.fillStyle=g; ctx.fill();
+      }
+    }
+    requestAnimationFrame(loop);
+  }
+
+  function start() {
+    const vw=window.innerWidth, vh=window.innerHeight;
+    const d = (vw*vh)/(1920*1080);
+    const lc = Math.round(Math.min(10,Math.max(4,6*d)));
+    const ac = Math.round(Math.min(12,Math.max(5,8*d)));
+    mount(document.getElementById('login-lava-canvas'), lc, 0.7+d*0.25);
+    mount(document.getElementById('app-lava-canvas'),   ac, 0.8+d*0.3);
+    loop();
+  }
+
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',start); else start();
+
+  return cfg;
+})();
+
+// ══════════════════════════════════════════════════════════
+// THEME MODE — default / glass
+// ══════════════════════════════════════════════════════════
+(function(){
+  // Load saved theme and glass options
+  const saved = JSON.parse(localStorage.getItem('grid_appearance') || '{}');
+  const mode     = saved.mode      || 'default';
+  const blur     = saved.blur      ?? 18;
+  const opacity  = saved.opacity   ?? 55;
+  const speed    = saved.speed     ?? 5;
+  const intensity= saved.intensity ?? 50;
+
+  // Apply on boot
+  applyThemeMode(mode, blur, opacity, speed, intensity, false);
+
+  // Sync UI when settings pane opens (after DOM ready)
+  document.addEventListener('DOMContentLoaded', () => syncAppearanceUI(mode, blur, opacity, speed, intensity));
+})();
+
+function applyThemeMode(mode, blur, opacity, speed, intensity, save) {
+  const isGlass = (mode === 'glass');
+
+  // Toggle body class
+  document.body.classList.toggle('glass', isGlass);
+
+  // Update CSS variables for glass
+  if (isGlass) {
+    const op = (opacity / 100).toFixed(2);
+    const opD = Math.min(1, opacity/100 + 0.1).toFixed(2);
+    document.documentElement.style.setProperty('--glass-blur',    blur+'px');
+    document.documentElement.style.setProperty('--glass-bg',      `rgba(10,12,16,${op})`);
+    document.documentElement.style.setProperty('--glass-bg-dark', `rgba(6,8,10,${opD})`);
+    document.documentElement.style.setProperty('--glass-border',  'rgba(0,229,255,0.10)');
+  }
+
+  // Login box blur — always apply (glass or default)
+  const loginBlur = isGlass ? blur : 28;
+  const loginBox = document.querySelector('.login-box');
+  if (loginBox) {
+    loginBox.style.backdropFilter = `blur(${loginBlur}px) saturate(1.4)`;
+    loginBox.style.webkitBackdropFilter = `blur(${loginBlur}px) saturate(1.4)`;
+    loginBox.style.background = `rgba(8,10,13,${isGlass ? (opacity/100 - 0.1).toFixed(2) : '0.55'})`;
+  }
+
+  // Lava engine cfg
+  const speedSteps = [0.15,0.3,0.44,0.58,0.73,1.0,1.2,1.5,1.8,2.5];
+  LavaLamp.speedMult = speedSteps[Math.min(9, speed-1)];
+  LavaLamp.intensity = intensity / 100;
+
+  if (save !== false) {
+    try { localStorage.setItem('grid_appearance', JSON.stringify({mode,blur,opacity,speed,intensity})); } catch(e){}
+  }
+}
+
+function setThemeMode(mode) {
+  const blur     = parseInt(document.getElementById('glass-blur-slider')?.value    ?? 18);
+  const opacity  = parseInt(document.getElementById('glass-opacity-slider')?.value ?? 55);
+  const speed    = parseInt(document.getElementById('glass-speed-slider')?.value   ?? 5);
+  const intensity= parseInt(document.getElementById('glass-intensity-slider')?.value ?? 50);
+
+  applyThemeMode(mode, blur, opacity, speed, intensity, true);
+
+  // Update card active state
+  const dc = document.getElementById('theme-card-default');
+  const gc = document.getElementById('theme-card-glass');
+  if (dc && gc) {
+    const isGlass = mode==='glass';
+    dc.style.border    = isGlass ? '1.5px solid var(--border2)'          : '1.5px solid var(--accent-border)';
+    dc.style.background= isGlass ? 'transparent'                         : 'var(--accent-dim)';
+    const dcLabel = dc.querySelector('div[style*="font-size:10px"]');
+    if(dcLabel) dcLabel.style.color = isGlass ? 'var(--text2)' : 'var(--accent)';
+    gc.style.border    = isGlass ? '1.5px solid var(--accent-border)'    : '1.5px solid var(--border2)';
+    gc.style.background= isGlass ? 'var(--accent-dim)'                   : 'transparent';
+    const gcLabel = gc.querySelector('div[style*="font-size:10px"]');
+    if(gcLabel) gcLabel.style.color = isGlass ? 'var(--accent)' : 'var(--text2)';
+  }
+
+  // Show/hide glass options panel
+  const gs = document.getElementById('glass-settings');
+  if (gs) gs.style.display = mode==='glass' ? 'flex' : 'none';
+}
+
+function applyGlassOptions() {
+  const blur     = parseInt(document.getElementById('glass-blur-slider')?.value    ?? 18);
+  const opacity  = parseInt(document.getElementById('glass-opacity-slider')?.value ?? 55);
+  const speed    = parseInt(document.getElementById('glass-speed-slider')?.value   ?? 5);
+  const intensity= parseInt(document.getElementById('glass-intensity-slider')?.value ?? 50);
+
+  // Live-update labels
+  const blurLabel = document.getElementById('glass-blur-val');
+  if(blurLabel) blurLabel.textContent = blur+'px';
+  const opLabel = document.getElementById('glass-opacity-val');
+  if(opLabel) opLabel.textContent = opacity+'%';
+  const speedStepLabels = ['0.2×','0.3×','0.4×','0.6×','0.8×','1×','1.2×','1.5×','1.8×','2.5×'];
+  const spLabel = document.getElementById('glass-speed-val');
+  if(spLabel) spLabel.textContent = speedStepLabels[speed-1]||'1×';
+  const inLabel = document.getElementById('glass-intensity-val');
+  if(inLabel) inLabel.textContent = intensity+'%';
+
+  // Re-apply with current mode
+  const mode = document.body.classList.contains('glass') ? 'glass' : 'default';
+  applyThemeMode(mode, blur, opacity, speed, intensity, true);
+}
+
+function syncAppearanceUI(mode, blur, opacity, speed, intensity) {
+  // Set slider values
+  const setS = (id,v) => { const el=document.getElementById(id); if(el){el.value=v; updateSliderTrack&&updateSliderTrack(el);} };
+  setS('glass-blur-slider', blur);
+  setS('glass-opacity-slider', opacity);
+  setS('glass-speed-slider', speed);
+  setS('glass-intensity-slider', intensity);
+
+  // Set labels
+  const speedStepLabels = ['0.2×','0.3×','0.4×','0.6×','0.8×','1×','1.2×','1.5×','1.8×','2.5×'];
+  const setT = (id,t) => { const el=document.getElementById(id); if(el) el.textContent=t; };
+  setT('glass-blur-val', blur+'px');
+  setT('glass-opacity-val', opacity+'%');
+  setT('glass-speed-val', speedStepLabels[speed-1]||'1×');
+  setT('glass-intensity-val', intensity+'%');
+
+  // Trigger card active states + glass settings visibility
+  setThemeMode(mode);
+}
+
+// Re-sync UI when Appearance tab is opened
+const _origSwitchTab = window.switchTab;
+window.switchTab = function(name, el) {
+  if (_origSwitchTab) _origSwitchTab(name, el);
+  if (name === 'appearance') {
+    const saved = JSON.parse(localStorage.getItem('grid_appearance') || '{}');
+    syncAppearanceUI(
+      saved.mode      || 'default',
+      saved.blur      ?? 18,
+      saved.opacity   ?? 55,
+      saved.speed     ?? 5,
+      saved.intensity ?? 50
+    );
+  }
+};
+
+</script>
+</body>
+</html>
   'use strict';
 
   const PALETTE = [
