@@ -155,10 +155,10 @@ body.glass #app-lava-canvas {
   pointer-events: none;
   z-index: 0;
 }
-/* Make app sit above the fixed canvas */
 body.glass .app {
   position: relative;
   z-index: 1;
+  background: transparent;
 }
 
 
@@ -240,6 +240,7 @@ body.glass .app {
    APP SHELL
 ══════════════════════════════════ */
 .app{display:flex;width:100vw;height:100vh;background:var(--bg2);opacity:0;transition:opacity 0.4s}
+body.glass .app{background:transparent}
 body.electron .app{height:calc(100vh - 32px)}
 .app.visible{opacity:1}
 
@@ -2025,12 +2026,17 @@ input[type=range]:focus{outline:none}
     <div class="login-bg-glow"></div>
     <div class="login-box">
       <div class="login-logo">
-        <svg width="40" height="40" viewBox="0 0 22 22" fill="none">
-          <rect x="1" y="1" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.2" fill="none"/>
-          <rect x="13" y="1" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.2" fill="none"/>
-          <rect x="1" y="13" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.2" fill="none"/>
-          <rect x="13" y="13" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.2" fill="none"/>
-          <circle cx="11" cy="11" r="2.5" fill="#00E5FF" opacity="0.9"/>
+        <svg width="48" height="48" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M6 17 L6 8 Q6 6 8 6 L17 6" stroke="white" stroke-width="1.9" stroke-linecap="round" fill="none"/>
+          <path d="M27 6 L36 6 Q38 6 38 8 L38 17" stroke="white" stroke-width="1.9" stroke-linecap="round" fill="none"/>
+          <path d="M6 27 L6 36 Q6 38 8 38 L17 38" stroke="white" stroke-width="1.9" stroke-linecap="round" fill="none"/>
+          <path d="M27 38 L36 38 Q38 38 38 36 L38 27" stroke="white" stroke-width="1.9" stroke-linecap="round" fill="none"/>
+          <line x1="22" y1="6" x2="22" y2="15" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="22" y1="29" x2="22" y2="38" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="6" y1="22" x2="15" y2="22" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="29" y1="22" x2="38" y2="22" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+          <circle cx="22" cy="22" r="4.5" fill="#00E5FF" opacity="0.12"/>
+          <circle cx="22" cy="22" r="2.3" fill="#00E5FF" opacity="0.95"/>
         </svg>
       </div>
       <div class="login-title">GRID</div>
@@ -2052,7 +2058,7 @@ input[type=range]:focus{outline:none}
 
 <!-- ELECTRON TITLEBAR -->
 <div id="etb" style="display:none;position:fixed;top:0;left:0;right:0;height:32px;background:#060708;border-bottom:1px solid rgba(255,255,255,0.04);z-index:9999;-webkit-app-region:drag;align-items:center;justify-content:space-between;padding:0 12px 0 16px">
-  <div style="-webkit-app-region:drag;display:flex;align-items:center;gap:8px"><svg width="14" height="14" viewBox="0 0 22 22" fill="none"><rect x="1" y="1" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.5" fill="none"/><rect x="13" y="1" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.5" fill="none"/><rect x="1" y="13" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.5" fill="none"/><rect x="13" y="13" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.5" fill="none"/><circle cx="11" cy="11" r="2.5" fill="#00E5FF"/></svg><span style="font-size:9px;color:#283340;letter-spacing:0.12em;font-family:JetBrains Mono,monospace;text-transform:uppercase">GRID</span></div>
+  <div style="-webkit-app-region:drag;display:flex;align-items:center;gap:8px"><svg width="14" height="14" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 17 L6 8 Q6 6 8 6 L17 6" stroke="white" stroke-width="2.2" stroke-linecap="round" fill="none"/><path d="M27 6 L36 6 Q38 6 38 8 L38 17" stroke="white" stroke-width="2.2" stroke-linecap="round" fill="none"/><path d="M6 27 L6 36 Q6 38 8 38 L17 38" stroke="white" stroke-width="2.2" stroke-linecap="round" fill="none"/><path d="M27 38 L36 38 Q38 38 38 36 L38 27" stroke="white" stroke-width="2.2" stroke-linecap="round" fill="none"/><line x1="22" y1="6" x2="22" y2="15" stroke="white" stroke-width="1.8" stroke-linecap="round"/><line x1="22" y1="29" x2="22" y2="38" stroke="white" stroke-width="1.8" stroke-linecap="round"/><line x1="6" y1="22" x2="15" y2="22" stroke="white" stroke-width="1.8" stroke-linecap="round"/><line x1="29" y1="22" x2="38" y2="22" stroke="white" stroke-width="1.8" stroke-linecap="round"/><circle cx="22" cy="22" r="4" fill="#00E5FF" opacity="0.15"/><circle cx="22" cy="22" r="2.2" fill="#00E5FF" opacity="0.95"/></svg><span style="font-size:9px;color:#283340;letter-spacing:0.12em;font-family:JetBrains Mono,monospace;text-transform:uppercase">GRID</span></div>
   <div style="-webkit-app-region:no-drag;display:flex;gap:2px">
     <div onclick="window.electronAPI&&electronAPI.minimize()" class="tb-btn">─</div>
     <div onclick="toggleMaximize()" id="tb-max" class="tb-btn">□</div>
@@ -2069,12 +2075,17 @@ input[type=range]:focus{outline:none}
   <div class="grid-dock" id="grid-dock">
     <!-- Logo / Hub — click to switch to DM/contacts mode -->
     <div class="dock-logo" onclick="setNavMode('dm')" title="Direct Messages" id="dock-logo-dm">
-      <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-        <rect x="1" y="1" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.2" fill="none"/>
-        <rect x="13" y="1" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.2" fill="none"/>
-        <rect x="1" y="13" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.2" fill="none"/>
-        <rect x="13" y="13" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.2" fill="none"/>
-        <circle cx="11" cy="11" r="2.5" fill="#00E5FF" opacity="0.9"/>
+      <svg width="22" height="22" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M6 17 L6 8 Q6 6 8 6 L17 6" stroke="white" stroke-width="2" stroke-linecap="round" fill="none"/>
+        <path d="M27 6 L36 6 Q38 6 38 8 L38 17" stroke="white" stroke-width="2" stroke-linecap="round" fill="none"/>
+        <path d="M6 27 L6 36 Q6 38 8 38 L17 38" stroke="white" stroke-width="2" stroke-linecap="round" fill="none"/>
+        <path d="M27 38 L36 38 Q38 38 38 36 L38 27" stroke="white" stroke-width="2" stroke-linecap="round" fill="none"/>
+        <line x1="22" y1="6" x2="22" y2="15" stroke="white" stroke-width="1.6" stroke-linecap="round"/>
+        <line x1="22" y1="29" x2="22" y2="38" stroke="white" stroke-width="1.6" stroke-linecap="round"/>
+        <line x1="6" y1="22" x2="15" y2="22" stroke="white" stroke-width="1.6" stroke-linecap="round"/>
+        <line x1="29" y1="22" x2="38" y2="22" stroke="white" stroke-width="1.6" stroke-linecap="round"/>
+        <circle cx="22" cy="22" r="4.5" fill="#00E5FF" opacity="0.12"/>
+        <circle cx="22" cy="22" r="2.3" fill="#00E5FF" opacity="0.95"/>
       </svg>
       <span class="dock-tip">Messages & Contacts</span>
     </div>
@@ -2097,12 +2108,16 @@ input[type=range]:focus{outline:none}
 
     <!-- Server icons — click to switch to server/channels mode -->
     <div class="dock-server active" id="dock-server-node01" title="GRID · MESSAGES" onclick="setNavMode('server')">
-      <svg width="14" height="14" viewBox="0 0 22 22" fill="none">
-        <rect x="1" y="1" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.5" fill="none"/>
-        <rect x="13" y="1" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.5" fill="none"/>
-        <rect x="1" y="13" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.5" fill="none"/>
-        <rect x="13" y="13" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.5" fill="none"/>
-        <circle cx="11" cy="11" r="2.5" fill="currentColor"/>
+      <svg width="14" height="14" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M6 17 L6 8 Q6 6 8 6 L17 6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+        <path d="M27 6 L36 6 Q38 6 38 8 L38 17" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+        <path d="M6 27 L6 36 Q6 38 8 38 L17 38" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+        <path d="M27 38 L36 38 Q38 38 38 36 L38 27" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+        <line x1="22" y1="6" x2="22" y2="15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <line x1="22" y1="29" x2="22" y2="38" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <line x1="6" y1="22" x2="15" y2="22" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <line x1="29" y1="22" x2="38" y2="22" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <circle cx="22" cy="22" r="2.3" fill="currentColor"/>
       </svg>
       <span class="dock-tip">GRID · MESSAGES</span>
     </div>
@@ -2136,12 +2151,17 @@ input[type=range]:focus{outline:none}
   <div class="grid-sub-panel" id="grid-sub-panel">
 
     <div class="sub-header">
-      <svg class="sub-server-icon" viewBox="0 0 22 22" fill="none">
-        <rect x="1" y="1" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.5" fill="none"/>
-        <rect x="13" y="1" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.5" fill="none"/>
-        <rect x="1" y="13" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.5" fill="none"/>
-        <rect x="13" y="13" width="8" height="8" rx="1.5" stroke="#00E5FF" stroke-width="1.5" fill="none"/>
-        <circle cx="11" cy="11" r="2.5" fill="#00E5FF"/>
+      <svg class="sub-server-icon" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M6 17 L6 8 Q6 6 8 6 L17 6" stroke="#00E5FF" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+        <path d="M27 6 L36 6 Q38 6 38 8 L38 17" stroke="#00E5FF" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+        <path d="M6 27 L6 36 Q6 38 8 38 L17 38" stroke="#00E5FF" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+        <path d="M27 38 L36 38 Q38 38 38 36 L38 27" stroke="#00E5FF" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+        <line x1="22" y1="6" x2="22" y2="15" stroke="#00E5FF" stroke-width="1.8" stroke-linecap="round"/>
+        <line x1="22" y1="29" x2="22" y2="38" stroke="#00E5FF" stroke-width="1.8" stroke-linecap="round"/>
+        <line x1="6" y1="22" x2="15" y2="22" stroke="#00E5FF" stroke-width="1.8" stroke-linecap="round"/>
+        <line x1="29" y1="22" x2="38" y2="22" stroke="#00E5FF" stroke-width="1.8" stroke-linecap="round"/>
+        <circle cx="22" cy="22" r="4" fill="#00E5FF" opacity="0.15"/>
+        <circle cx="22" cy="22" r="2.3" fill="#00E5FF"/>
       </svg>
       <span class="sub-server-name" id="sub-panel-title">GRID · MESSAGES</span>
     </div>
@@ -6446,145 +6466,131 @@ const LavaLamp = (function(){
   return cfg;
 })();
 
+
 // ══════════════════════════════════════════════════════════
 // THEME MODE — default / glass
 // ══════════════════════════════════════════════════════════
-(function(){
-  // Load saved theme and glass options
-  const saved = JSON.parse(localStorage.getItem('grid_appearance') || '{}');
-  const mode     = saved.mode      || 'default';
-  const blur     = saved.blur      ?? 18;
-  const opacity  = saved.opacity   ?? 55;
-  const speed    = saved.speed     ?? 5;
-  const intensity= saved.intensity ?? 50;
-
-  // Apply on boot
-  applyThemeMode(mode, blur, opacity, speed, intensity, false);
-
-  // Sync UI when settings pane opens (after DOM ready)
-  document.addEventListener('DOMContentLoaded', () => syncAppearanceUI(mode, blur, opacity, speed, intensity));
-})();
 
 function applyThemeMode(mode, blur, opacity, speed, intensity, save) {
   const isGlass = (mode === 'glass');
-
-  // Toggle body class
   document.body.classList.toggle('glass', isGlass);
 
-  // Update CSS variables for glass
   if (isGlass) {
-    const op = (opacity / 100).toFixed(2);
-    const opD = Math.min(1, opacity/100 + 0.1).toFixed(2);
-    document.documentElement.style.setProperty('--glass-blur',    blur+'px');
-    document.documentElement.style.setProperty('--glass-bg',      `rgba(10,12,16,${op})`);
-    document.documentElement.style.setProperty('--glass-bg-dark', `rgba(6,8,10,${opD})`);
+    const op  = Math.max(0.1, opacity / 100).toFixed(2);
+    const opD = Math.min(1.0, opacity / 100 + 0.1).toFixed(2);
+    document.documentElement.style.setProperty('--glass-blur',    blur + 'px');
+    document.documentElement.style.setProperty('--glass-bg',      'rgba(10,12,16,' + op + ')');
+    document.documentElement.style.setProperty('--glass-bg-dark', 'rgba(6,8,10,' + opD + ')');
     document.documentElement.style.setProperty('--glass-border',  'rgba(0,229,255,0.10)');
   }
 
-  // Login box blur — always apply (glass or default)
-  const loginBlur = isGlass ? blur : 28;
+  // Login box blur
   const loginBox = document.querySelector('.login-box');
   if (loginBox) {
-    loginBox.style.backdropFilter = `blur(${loginBlur}px) saturate(1.4)`;
-    loginBox.style.webkitBackdropFilter = `blur(${loginBlur}px) saturate(1.4)`;
-    loginBox.style.background = `rgba(8,10,13,${isGlass ? (opacity/100 - 0.1).toFixed(2) : '0.55'})`;
+    const lb = isGlass ? blur : 28;
+    loginBox.style.backdropFilter = 'blur(' + lb + 'px) saturate(1.4)';
+    loginBox.style.webkitBackdropFilter = 'blur(' + lb + 'px) saturate(1.4)';
+    loginBox.style.background = isGlass
+      ? 'rgba(8,10,13,' + Math.max(0.1, opacity / 100 - 0.1).toFixed(2) + ')'
+      : 'rgba(8,10,13,0.55)';
   }
 
-  // Lava engine cfg
+  // Lava speed / intensity
   const speedSteps = [0.15,0.3,0.44,0.58,0.73,1.0,1.2,1.5,1.8,2.5];
-  LavaLamp.speedMult = speedSteps[Math.min(9, speed-1)];
+  LavaLamp.speedMult = speedSteps[Math.min(9, Math.max(0, speed - 1))];
   LavaLamp.intensity = intensity / 100;
 
   if (save !== false) {
-    try { localStorage.setItem('grid_appearance', JSON.stringify({mode,blur,opacity,speed,intensity})); } catch(e){}
+    try { localStorage.setItem('grid_appearance', JSON.stringify({mode,blur,opacity,speed,intensity})); } catch(e) {}
   }
 }
 
 function setThemeMode(mode) {
-  const blur     = parseInt(document.getElementById('glass-blur-slider')?.value    ?? 18);
-  const opacity  = parseInt(document.getElementById('glass-opacity-slider')?.value ?? 55);
-  const speed    = parseInt(document.getElementById('glass-speed-slider')?.value   ?? 5);
-  const intensity= parseInt(document.getElementById('glass-intensity-slider')?.value ?? 50);
+  const getV = function(id, def) { var el = document.getElementById(id); return el ? parseInt(el.value) : def; };
+  var blur      = getV('glass-blur-slider', 18);
+  var opacity   = getV('glass-opacity-slider', 55);
+  var speed     = getV('glass-speed-slider', 5);
+  var intensity = getV('glass-intensity-slider', 50);
 
   applyThemeMode(mode, blur, opacity, speed, intensity, true);
 
-  // Update card active state
-  const dc = document.getElementById('theme-card-default');
-  const gc = document.getElementById('theme-card-glass');
+  var dc = document.getElementById('theme-card-default');
+  var gc = document.getElementById('theme-card-glass');
   if (dc && gc) {
-    const isGlass = mode==='glass';
-    dc.style.border    = isGlass ? '1.5px solid var(--border2)'          : '1.5px solid var(--accent-border)';
-    dc.style.background= isGlass ? 'transparent'                         : 'var(--accent-dim)';
-    const dcLabel = dc.querySelector('div[style*="font-size:10px"]');
-    if(dcLabel) dcLabel.style.color = isGlass ? 'var(--text2)' : 'var(--accent)';
-    gc.style.border    = isGlass ? '1.5px solid var(--accent-border)'    : '1.5px solid var(--border2)';
-    gc.style.background= isGlass ? 'var(--accent-dim)'                   : 'transparent';
-    const gcLabel = gc.querySelector('div[style*="font-size:10px"]');
-    if(gcLabel) gcLabel.style.color = isGlass ? 'var(--accent)' : 'var(--text2)';
+    var ig = (mode === 'glass');
+    dc.style.border     = ig ? '1.5px solid var(--border2)' : '1.5px solid var(--accent-border)';
+    dc.style.background = ig ? 'transparent' : 'var(--accent-dim)';
+    var dcLbl = dc.querySelector('div[style*="font-size:10px"]');
+    if (dcLbl) dcLbl.style.color = ig ? 'var(--text2)' : 'var(--accent)';
+    gc.style.border     = ig ? '1.5px solid var(--accent-border)' : '1.5px solid var(--border2)';
+    gc.style.background = ig ? 'var(--accent-dim)' : 'transparent';
+    var gcLbl = gc.querySelector('div[style*="font-size:10px"]');
+    if (gcLbl) gcLbl.style.color = ig ? 'var(--accent)' : 'var(--text2)';
   }
 
-  // Show/hide glass options panel
-  const gs = document.getElementById('glass-settings');
-  if (gs) gs.style.display = mode==='glass' ? 'flex' : 'none';
+  var gs = document.getElementById('glass-settings');
+  if (gs) gs.style.display = (mode === 'glass') ? 'flex' : 'none';
 }
 
 function applyGlassOptions() {
-  const blur     = parseInt(document.getElementById('glass-blur-slider')?.value    ?? 18);
-  const opacity  = parseInt(document.getElementById('glass-opacity-slider')?.value ?? 55);
-  const speed    = parseInt(document.getElementById('glass-speed-slider')?.value   ?? 5);
-  const intensity= parseInt(document.getElementById('glass-intensity-slider')?.value ?? 50);
-
-  // Live-update labels
-  const blurLabel = document.getElementById('glass-blur-val');
-  if(blurLabel) blurLabel.textContent = blur+'px';
-  const opLabel = document.getElementById('glass-opacity-val');
-  if(opLabel) opLabel.textContent = opacity+'%';
-  const speedStepLabels = ['0.2×','0.3×','0.4×','0.6×','0.8×','1×','1.2×','1.5×','1.8×','2.5×'];
-  const spLabel = document.getElementById('glass-speed-val');
-  if(spLabel) spLabel.textContent = speedStepLabels[speed-1]||'1×';
-  const inLabel = document.getElementById('glass-intensity-val');
-  if(inLabel) inLabel.textContent = intensity+'%';
-
-  // Re-apply with current mode
-  const mode = document.body.classList.contains('glass') ? 'glass' : 'default';
+  var getV = function(id, def) { var el = document.getElementById(id); return el ? parseInt(el.value) : def; };
+  var blur      = getV('glass-blur-slider', 18);
+  var opacity   = getV('glass-opacity-slider', 55);
+  var speed     = getV('glass-speed-slider', 5);
+  var intensity = getV('glass-intensity-slider', 50);
+  var sl = ['0.2x','0.3x','0.4x','0.6x','0.8x','1x','1.2x','1.5x','1.8x','2.5x'];
+  var setText = function(id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+  setText('glass-blur-val',      blur + 'px');
+  setText('glass-opacity-val',   opacity + '%');
+  setText('glass-speed-val',     sl[speed - 1] || '1x');
+  setText('glass-intensity-val', intensity + '%');
+  var mode = document.body.classList.contains('glass') ? 'glass' : 'default';
   applyThemeMode(mode, blur, opacity, speed, intensity, true);
 }
 
 function syncAppearanceUI(mode, blur, opacity, speed, intensity) {
-  // Set slider values
-  const setS = (id,v) => { const el=document.getElementById(id); if(el){el.value=v; updateSliderTrack&&updateSliderTrack(el);} };
-  setS('glass-blur-slider', blur);
-  setS('glass-opacity-slider', opacity);
-  setS('glass-speed-slider', speed);
-  setS('glass-intensity-slider', intensity);
-
-  // Set labels
-  const speedStepLabels = ['0.2×','0.3×','0.4×','0.6×','0.8×','1×','1.2×','1.5×','1.8×','2.5×'];
-  const setT = (id,t) => { const el=document.getElementById(id); if(el) el.textContent=t; };
-  setT('glass-blur-val', blur+'px');
-  setT('glass-opacity-val', opacity+'%');
-  setT('glass-speed-val', speedStepLabels[speed-1]||'1×');
-  setT('glass-intensity-val', intensity+'%');
-
-  // Trigger card active states + glass settings visibility
+  var setSlider = function(id, v) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.value = v;
+    if (typeof updateSliderTrack === 'function') updateSliderTrack(el);
+  };
+  setSlider('glass-blur-slider',      blur);
+  setSlider('glass-opacity-slider',   opacity);
+  setSlider('glass-speed-slider',     speed);
+  setSlider('glass-intensity-slider', intensity);
+  applyGlassOptions();
   setThemeMode(mode);
 }
 
-// Re-sync UI when Appearance tab is opened
-const _origSwitchTab = window.switchTab;
-window.switchTab = function(name, el) {
-  if (_origSwitchTab) _origSwitchTab(name, el);
-  if (name === 'appearance') {
-    const saved = JSON.parse(localStorage.getItem('grid_appearance') || '{}');
-    syncAppearanceUI(
-      saved.mode      || 'default',
-      saved.blur      ?? 18,
-      saved.opacity   ?? 55,
-      saved.speed     ?? 5,
-      saved.intensity ?? 50
-    );
-  }
-};
+// Boot — wait for DOM so body and all elements exist
+document.addEventListener('DOMContentLoaded', function() {
+  var saved     = JSON.parse(localStorage.getItem('grid_appearance') || '{}');
+  var mode      = saved.mode      || 'default';
+  var blur      = saved.blur      != null ? saved.blur      : 18;
+  var opacity   = saved.opacity   != null ? saved.opacity   : 55;
+  var speed     = saved.speed     != null ? saved.speed     : 5;
+  var intensity = saved.intensity != null ? saved.intensity : 50;
+  applyThemeMode(mode, blur, opacity, speed, intensity, false);
+});
+
+// Intercept switchTab to sync appearance UI
+(function() {
+  var orig = window.switchTab;
+  window.switchTab = function(name, el) {
+    if (orig) orig(name, el);
+    if (name === 'appearance') {
+      var saved     = JSON.parse(localStorage.getItem('grid_appearance') || '{}');
+      syncAppearanceUI(
+        saved.mode      || 'default',
+        saved.blur      != null ? saved.blur      : 18,
+        saved.opacity   != null ? saved.opacity   : 55,
+        saved.speed     != null ? saved.speed     : 5,
+        saved.intensity != null ? saved.intensity : 50
+      );
+    }
+  };
+})();
 
 </script>
 </body>
