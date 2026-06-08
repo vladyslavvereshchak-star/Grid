@@ -5359,7 +5359,7 @@ function hideConnectedUI() {
   stopSpeakingDetection();
 }
 
-// ── Context menu ──
+function stopSpeakingDetection() {
   if (speakAnimFrame) { cancelAnimationFrame(speakAnimFrame); speakAnimFrame = null; }
   // Legacy compat
   if (speakAnimMe)   { cancelAnimationFrame(speakAnimMe);   speakAnimMe = null; }
