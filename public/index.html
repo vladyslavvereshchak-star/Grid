@@ -4,8 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>GRID</title>
-<!-- Emergency: clear any broken zoom immediately before render -->
-<script>try{localStorage.removeItem('grid_ui_zoom');}catch(e){}</script>
+<!-- Zoom managed by Electron webContents.setZoomFactor (GPU-level, no blur) -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css"/>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet"/>
 <style>
@@ -5182,7 +5181,15 @@ function updateMyProfile() {
 // ── MODAL ──
 function openModal() {
   document.getElementById('modal-overlay').classList.add('open');
-  const saved = parseInt(localStorage.getItem('grid_ui_zoom') || '100');
+  // Читаем реальный зум из Electron если доступен, иначе из localStorage
+  var realZoom = 100;
+  if (window.electronAPI && window.electronAPI.getZoom) {
+    realZoom = Math.round(window.electronAPI.getZoom() * 100);
+    localStorage.setItem('grid_ui_zoom', realZoom);
+  } else {
+    realZoom = parseInt(localStorage.getItem('grid_ui_zoom') || '100');
+  }
+  const saved = realZoom;
   const slider = document.getElementById('ui-zoom-slider');
   if (slider) { slider.value = saved; updateSliderTrack(slider); }
   const disp = document.getElementById('zoom-val-display');
@@ -5374,54 +5381,42 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// ── UI ZOOM ──
+// ── UI ZOOM ─────────────────────────────────────────────────────────────────
+// Используем Electron-native zoom (webContents.setZoomFactor) вместо CSS
+// transform. Это масштабирование на уровне GPU — нет размытия, нет поломки
+// fixed-элементов, нет overflow при ресайзе окна.
 function applyUIZoom(pct) {
-  const v = Math.min(200, Math.max(80, parseInt(pct)));
+  const v = Math.min(200, Math.max(50, parseInt(pct)));
   localStorage.setItem('grid_ui_zoom', v);
 
-  // Clear any legacy html zoom
-  document.documentElement.style.zoom = '';
+  // Сначала снимаем любые старые CSS-трансформы (на случай если они остались)
+  _clearCSSZoom();
 
-  const app = document.getElementById('app');
-  if (app) {
-    if (v === 100) {
-      app.style.cssText = app.style.cssText
-        .replace(/transform[^;]*;?/g, '')
-        .replace(/transform-origin[^;]*;?/g, '')
-        .replace(/width[^;]*;?/g, '')
-        .replace(/height[^;]*;?/g, '');
-      app.style.transform = '';
-      app.style.transformOrigin = '';
-      app.style.width = '';
-      app.style.height = '';
-    } else {
-      const s = v / 100;
-      app.style.transformOrigin = 'top left';
-      app.style.transform = 'scale(' + s + ')';
-      app.style.width  = (100 / s).toFixed(4) + 'vw';
-      app.style.height = (100 / s).toFixed(4) + 'vh';
-    }
+  if (window.electronAPI && window.electronAPI.setZoom) {
+    // Electron: GPU-масштабирование, чёткое при любом значении
+    window.electronAPI.setZoom(v / 100);
+  } else {
+    // Браузер (открыт не в Electron): CSS zoom — не размывает и не ломает fixed
+    document.documentElement.style.zoom = (v / 100).toString();
   }
 
-  // Modal and login scale the same way (they are fixed, need separate scaling)
-  var overlays = ['modal-overlay', 'login-screen'];
-  overlays.forEach(function(id) {
+  _syncZoomUI(v);
+}
+
+function _clearCSSZoom() {
+  // Убираем любые старые transform-scale на #app и оверлеях
+  ['app', 'modal-overlay', 'login-screen'].forEach(function(id) {
     var el = document.getElementById(id);
     if (!el) return;
-    if (v === 100) {
-      el.style.transform = '';
-      el.style.transformOrigin = '';
-      el.style.width = '';
-      el.style.height = '';
-    } else {
-      var s = v / 100;
-      el.style.transformOrigin = 'top left';
-      el.style.transform = 'scale(' + s + ')';
-      el.style.width  = (100 / s).toFixed(4) + 'vw';
-      el.style.height = (100 / s).toFixed(4) + 'vh';
-    }
+    el.style.transform      = '';
+    el.style.transformOrigin= '';
+    el.style.width          = '';
+    el.style.height         = '';
   });
+  document.documentElement.style.zoom = '';
+}
 
+function _syncZoomUI(v) {
   var slider = document.getElementById('ui-zoom-slider');
   if (slider) { slider.value = v; updateSliderTrack(slider); }
   var disp = document.getElementById('zoom-val-display');
@@ -5430,20 +5425,27 @@ function applyUIZoom(pct) {
     btn.classList.toggle('active', parseInt(btn.dataset.zoom) === v);
   });
 }
-// Emergency zoom reset: Ctrl+0
+
+// Ctrl+0 — сброс зума
 document.addEventListener('keydown', function(e) {
   if ((e.ctrlKey || e.metaKey) && (e.key === '0' || e.key === 'Numpad0')) {
     e.preventDefault();
     applyUIZoom(100);
   }
 });
-// Restore zoom on load
+
+// Восстановление зума при загрузке
+// main.js уже вызывает setZoomFactor() через did-finish-load,
+// поэтому здесь только синхронизируем UI-контролы
 (function() {
-  document.documentElement.style.zoom = '';
-  var saved = localStorage.getItem('grid_ui_zoom');
-  if (!saved || parseInt(saved) === 100) return;
+  _clearCSSZoom();
+  var saved = parseInt(localStorage.getItem('grid_ui_zoom') || '100');
+  // Если Electron сам ещё не применил зум (например, открыто в браузере)
+  if (!window.electronAPI && saved !== 100) {
+    document.documentElement.style.zoom = (saved / 100).toString();
+  }
   document.addEventListener('DOMContentLoaded', function() {
-    applyUIZoom(parseInt(saved));
+    _syncZoomUI(saved);
   });
 })();
 
