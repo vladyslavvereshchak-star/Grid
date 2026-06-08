@@ -5188,6 +5188,13 @@ function openModal() {
   document.querySelectorAll('.zoom-preset-btn').forEach(function(btn){
     btn.classList.toggle('active', parseInt(btn.dataset.zoom) === saved);
   });
+  // Re-sync all range inputs inside modal so tracks render correctly
+  requestAnimationFrame(function() {
+    document.querySelectorAll('#modal-overlay input[type=range]').forEach(function(el) {
+      updateSliderTrack(el);
+      if (typeof window.syncSlider === 'function') window.syncSlider(el);
+    });
+  });
 }
 function closeModal() { document.getElementById('modal-overlay').classList.remove('open'); stopMicTest(); }
 function switchTab(id, el) {
@@ -5369,23 +5376,23 @@ document.addEventListener('keydown', (e) => {
 function applyUIZoom(pct) {
   const v = Math.min(200, Math.max(80, parseInt(pct)));
   localStorage.setItem('grid_ui_zoom', v);
-  // Use CSS zoom on <html> — behaves exactly like browser zoom:
-  // rescales layout AND viewport, scrollbars appear when needed,
-  // fixed/absolute elements all scale together. Works in Chromium/Electron/Safari.
-  // Firefox doesn't support CSS zoom but Electron (Chromium) does.
-  document.documentElement.style.zoom = (v / 100);
-  // Keep old #app transforms cleared in case they were set by old code
-  const appEl = document.getElementById('app');
-  if (appEl) {
-    appEl.style.transform = '';
-    appEl.style.transformOrigin = '';
-    appEl.style.position = '';
-    appEl.style.top = '';
-    appEl.style.left = '';
-    appEl.style.width = '';
-    appEl.style.height = '';
-    appEl.style.zoom = '';
+  const scale = v / 100;
+
+  if (scale === 1) {
+    // Reset everything
+    document.documentElement.style.zoom = '';
+    document.body.style.transform = '';
+    document.body.style.transformOrigin = '';
+    document.body.style.width = '';
+    document.body.style.height = '';
+  } else {
+    // CSS zoom on <html> is the cleanest approach in Chromium/Electron —
+    // but values > 1 cause fixed elements to mis-position in some builds.
+    // Use it anyway — it's the only method that truly reflows like browser zoom.
+    document.documentElement.style.zoom = '';  // clear first to avoid compounding
+    document.documentElement.style.zoom = scale;
   }
+
   const slider = document.getElementById('ui-zoom-slider');
   if (slider) { slider.value = v; updateSliderTrack(slider); }
   const disp = document.getElementById('zoom-val-display');
@@ -5660,7 +5667,11 @@ function showCallCtxMenu(e, target) {
 }
 
 function updateSliderTrack(slider) {
-  const pct = (slider.value / slider.max) * 100;
+  if (!slider) return;
+  const mn = parseFloat(slider.min) || 0;
+  const mx = parseFloat(slider.max) || 100;
+  const v  = parseFloat(slider.value) || 0;
+  const pct = ((v - mn) / (mx - mn) * 100).toFixed(2);
   slider.style.setProperty('--pct', pct + '%');
 }
 
@@ -6198,6 +6209,8 @@ function searchMessages(query) {
     const mn=parseFloat(el.min)||0,mx=parseFloat(el.max)||100,v=parseFloat(el.value)||0;
     el.style.setProperty('--pct',((v-mn)/(mx-mn)*100).toFixed(2)+'%');
   }
+  // Expose globally so external code can call after setting .value
+  window.syncSlider = syncSlider;
   function attach(el){ syncSlider(el); el.addEventListener('input',()=>syncSlider(el)); }
   document.querySelectorAll('input[type=range]').forEach(attach);
   new MutationObserver(ms=>ms.forEach(m=>m.addedNodes.forEach(n=>{
@@ -6553,7 +6566,9 @@ function syncAppearanceUI(mode, blur, opacity, speed, intensity) {
     var el = document.getElementById(id);
     if (!el) return;
     el.value = v;
-    if (typeof updateSliderTrack === 'function') updateSliderTrack(el);
+    updateSliderTrack(el);
+    // also call global syncSlider if available (registered by initSliders)
+    if (typeof window.syncSlider === 'function') window.syncSlider(el);
   };
   setSlider('glass-blur-slider',      blur);
   setSlider('glass-opacity-slider',   opacity);
