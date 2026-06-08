@@ -85,6 +85,38 @@ let mainWindow = null;
 let tray = null;
 let isQuitting = false;
 
+// ══════════════════════════════════════════════════════
+//  ELECTRON AUDIO + WEBRTC QUALITY SWITCHES
+//  MUST be called before app.whenReady()
+// ══════════════════════════════════════════════════════
+
+// 🔑 FIX #1: Autoplay policy — без этого audio.play() в WebRTC молча блокируется
+// потому что ontrack срабатывает асинхронно, gesture context уже протух
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+
+// FIX #2: Отключаем фичу которая может переопределить autoplay-policy
+app.commandLine.appendSwitch('disable-features', 'AutoplayIgnoreWebAudio,HardwareMediaKeyHandling,MediaSessionService');
+
+// FIX #3: WebRTC audio processing — включаем всё что нужно для качества
+app.commandLine.appendSwitch('enable-features',
+  'WebRTCAudioProcessing,' +
+  'WebRTC-H264WithOpenH264FFmpeg,' +
+  'WebRTC-Audio-SendSideBwe,' +
+  'WebRTC-SendSideBwe-WithOverhead'
+);
+
+// FIX #4: Буфер аудио — меньше буфер = меньше задержка (как в Discord)
+app.commandLine.appendSwitch('audio-buffer-size', '256');
+
+// FIX #5: Принудительно высокое качество аудио в Chromium
+app.commandLine.appendSwitch('force-fieldtrials',
+  'WebRTC-Audio-Sf/Enabled/' +
+  'WebRTC-Audio-NetEq-Nack/Enabled/'
+);
+
+// FIX #6: WebRTC не должен ограничивать IP (нужно для ICE)
+app.commandLine.appendSwitch('webrtc-ip-handling-policy', 'default');
+
 // ── Одна копия приложения ──
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) { app.quit(); process.exit(0); }
@@ -198,11 +230,27 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
+      // FIX #7: Без этого аудио режется когда окно свёрнуто (Chromium throttling)
+      backgroundThrottling: false,
+      // Явно разрешаем WebRTC
+      webSecurity: true,
     },
     show: false,
   });
 
   mainWindow.loadURL('https://grid-production-f3f4.up.railway.app');
+
+  // FIX #8: Автоматически разрешаем микрофон/камеру — без этого getUserMedia
+  // может молча фейлиться в Electron или показывать системный диалог
+  mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
+    const allowed = ['media', 'audioCapture', 'videoCapture', 'microphone', 'camera', 'notifications'];
+    console.log('[GRID Electron] Permission request:', permission, '→', allowed.includes(permission) ? 'ALLOW' : 'DENY');
+    callback(allowed.includes(permission));
+  });
+
+  mainWindow.webContents.session.setPermissionCheckHandler((webContents, permission) => {
+    return ['media', 'audioCapture', 'videoCapture', 'microphone', 'camera', 'notifications'].includes(permission);
+  });
 
   mainWindow.webContents.on('did-finish-load', () => {
     injectTitlebar();

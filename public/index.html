@@ -2966,15 +2966,22 @@ let micMuted = false;
 let peerConnections = {};
 let audioElements = {};
 
+// ── ICE SERVERS — базовая конфигурация ──
+// Дополнительные TURN серверы загружаются с сервера через /api/ice-servers
 const ICE_CONFIG = {
   iceCandidatePoolSize: 10,
   iceTransportPolicy: 'all',
   iceServers: [
+    // Google STUN — максимально надёжные
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+    // Cloudflare STUN
     { urls: 'stun:stun.cloudflare.com:3478' },
     { urls: 'stun:stun.stunprotocol.org:3478' },
-    // TURN: openrelay.metered.ca
+    // TURN: openrelay.metered.ca (fallback когда прямое соединение невозможно)
     { urls: 'turn:openrelay.metered.ca:80',
       username: 'openrelayproject', credential: 'openrelayproject' },
     { urls: 'turn:openrelay.metered.ca:80?transport=tcp',
@@ -2983,15 +2990,28 @@ const ICE_CONFIG = {
       username: 'openrelayproject', credential: 'openrelayproject' },
     { urls: 'turns:openrelay.metered.ca:443',
       username: 'openrelayproject', credential: 'openrelayproject' },
-    // TURN резервные
-    { urls: 'turn:freestun.net:3479',
-      username: 'free', credential: 'free' },
-    { urls: 'turns:freestun.net:5350',
-      username: 'free', credential: 'free' },
-    { urls: 'turn:numb.viagenie.ca',
-      username: 'webrtc@live.com', credential: 'muazkh' },
+    // Резервные TURN
+    { urls: 'turn:freestun.net:3479',  username: 'free', credential: 'free' },
+    { urls: 'turns:freestun.net:5350', username: 'free', credential: 'free' },
   ]
 };
+
+// ── Загружаем TURN с сервера (Railway env vars → TURN_URL/TURN_USERNAME/TURN_CREDENTIAL) ──
+// Это позволяет добавить нормальные платные TURN без пересборки клиента
+(async function fetchIceServers() {
+  try {
+    const res = await fetch('/api/ice-servers');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.iceServers && data.iceServers.length) {
+      // Добавляем серверные серверы ПЕРВЫМИ — они приоритетнее
+      ICE_CONFIG.iceServers = [...data.iceServers, ...ICE_CONFIG.iceServers];
+      console.log('[GRID ICE] Loaded', data.iceServers.length, 'server-side ICE servers');
+    }
+  } catch(e) {
+    // Не критично — используем встроенные серверы
+  }
+})();
 
 // ── VOICE DEVICE SETTINGS ──
 let voiceInputDeviceId = localStorage.getItem('grid_input_device') || '';
@@ -4300,9 +4320,9 @@ async function startCallWebRTC(peerUsername, isInitiator) {
     if (e.candidate) wsSend({ type: 'call_ice', to: peerUsername, candidate: e.candidate });
   };
 
-  callPc.ontrack = (e) => {
+  callPc.ontrack = async (e) => {
     if (e.track.kind !== 'audio') return;
-    console.log('[GRID WebRTC] ontrack — remote audio track received');
+    console.log('[GRID WebRTC] ontrack — remote audio track received, track state:', e.track.readyState);
 
     const outputGainRatio = (typeof outputGainValue !== 'undefined' ? outputGainValue : 200) / 100;
     const remoteStream = (e.streams && e.streams[0])
@@ -4315,14 +4335,42 @@ async function startCallWebRTC(peerUsername, isInitiator) {
       audio.id = 'call-remote-audio';
       audio.autoplay = true;
       audio.setAttribute('playsinline', '');
+      audio.setAttribute('webkit-playsinline', '');
       audio.style.display = 'none';
       document.body.appendChild(audio);
     }
-    // Сохраняем RAW поток — нужен для speaking detection analyser
+
+    // Сохраняем RAW поток для speaking detection analyser
     audio._rawStream = remoteStream;
 
+    // ── Функция воспроизведения — надёжная для Electron ──
+    // В Electron с autoplay-policy=no-user-gesture-required это всегда работает
+    // В браузере — требует gesture, поэтому вешаем несколько fallback
+    async function playAudio(audioEl) {
+      try {
+        await audioEl.play();
+        console.log('[GRID WebRTC] audio.play() success');
+      } catch(err) {
+        console.warn('[GRID WebRTC] audio.play() blocked:', err.name, '— adding interaction fallback');
+        // Множественные fallback для всех случаев
+        const retry = () => { audioEl.play().catch(e => console.warn('[GRID] retry play failed:', e)); };
+        document.addEventListener('pointerdown', retry, { once: true });
+        document.addEventListener('keydown',     retry, { once: true });
+        document.addEventListener('click',       retry, { once: true });
+      }
+    }
+
+    // ── Пытаемся использовать AudioContext для gain >100% ──
     try {
-      const outCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const outCtx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive', sampleRate: 48000 });
+
+      // КРИТИЧНО: resume() ДОЛЖЕН завершиться до createMediaStreamSource
+      // В Electron без autoplay-policy AudioContext стартует suspended
+      if (outCtx.state !== 'running') {
+        await outCtx.resume();
+        console.log('[GRID WebRTC] AudioContext resumed, state:', outCtx.state);
+      }
+
       const outSrc  = outCtx.createMediaStreamSource(remoteStream);
       const outGain = outCtx.createGain();
       outGain.gain.value = outputGainRatio;
@@ -4334,34 +4382,30 @@ async function startCallWebRTC(peerUsername, isInitiator) {
       audio.srcObject = outDest.stream;
       audio.volume = 1;
       audio.muted = callSoundMuted;
-      audio.play().catch(() => {
-        document.addEventListener('click', () => audio.play().catch(() => {}), { once: true });
-      });
       applySinkId(audio);
-      outCtx.resume().catch(() => {});
+      await playAudio(audio);
+
     } catch(err) {
-      console.warn('[GRID WebRTC] AudioContext fallback:', err.message);
+      // Fallback: напрямую без AudioContext — всегда работает
+      console.warn('[GRID WebRTC] AudioContext failed, using direct srcObject:', err.message);
       audio.srcObject = remoteStream;
-      audio.volume = Math.min(1, outputGainRatio);
+      audio.volume = Math.min(1, outputGainRatio); // Ограничено 100% без GainNode
       audio.muted = callSoundMuted;
-      audio.play().catch(() => {
-        document.addEventListener('click', () => audio.play().catch(() => {}), { once: true });
-      });
       applySinkId(audio);
+      await playAudio(audio);
       callOutputGainNode = { gain: {
         get value()  { return audio.volume; },
         set value(v) { audio.volume = Math.min(1, Math.max(0, v)); }
       }};
     }
 
-    // ── Перезапускаем speaking detection теперь когда аудио реально есть ──
-    // Небольшая задержка чтобы srcObject успел примениться
-    setTimeout(() => {
+    // ── Запускаем speaking detection с задержкой (srcObject должен "прогреться") ──
+    setTimeout(async () => {
       if (typeof startSpeakingDetection === 'function') {
-        console.log('[GRID WebRTC] Restarting speaking detection after ontrack');
-        startSpeakingDetection();
+        console.log('[GRID WebRTC] Starting speaking detection after ontrack');
+        await startSpeakingDetection();
       }
-    }, 400);
+    }, 500);
   };
 
   callPc.onconnectionstatechange = () => {
@@ -5503,7 +5547,7 @@ function resizeViz(canvas) {
 }
 
 // ── Speaking detection via Web Audio API ──
-function startSpeakingDetection() {
+async function startSpeakingDetection() {
   stopSpeakingDetection();
 
   const vizMe   = document.getElementById('viz-me');
@@ -5511,36 +5555,41 @@ function startSpeakingDetection() {
   resizeViz(vizMe);
   resizeViz(vizPeer);
 
-  // My mic → analyser
+  // ── МОЙ МИК → analyser ──
   if (callStream) {
     try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
+      if (ctx.state !== 'running') await ctx.resume();
       const src = ctx.createMediaStreamSource(callStream);
       speakAnalyserMe = ctx.createAnalyser();
       speakAnalyserMe.fftSize = 256;
       speakAnalyserMe.smoothingTimeConstant = 0.72;
       src.connect(speakAnalyserMe);
       speakBufMe = new Uint8Array(speakAnalyserMe.frequencyBinCount);
-    } catch(e) { console.warn('speakAnalyserMe failed', e); }
+      console.log('[GRID Speaking] My analyser ready, ctx state:', ctx.state);
+    } catch(e) { console.warn('[GRID Speaking] My analyser failed:', e); }
   }
 
-  // Peer audio → analyser
-  // Используем _rawStream (чистый WebRTC поток) а не srcObject (уже обработанный через GainNode)
+  // ── ПИРОВ АУДИО → analyser ──
+  // _rawStream = чистый WebRTC поток (до GainNode обработки) — нужен для корректного анализа
   const peerAudio = document.getElementById('call-remote-audio');
   const peerStream = peerAudio && (peerAudio._rawStream || peerAudio.srcObject);
-  if (peerStream) {
+  if (peerStream && peerStream.getAudioTracks().length > 0) {
     try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
+      // КРИТИЧНО: resume() ДОЛЖЕН завершиться до createMediaStreamSource
+      // Без этого в Electron analyser получает нулевые данные → анимация не работает
+      if (ctx.state !== 'running') await ctx.resume();
       const src = ctx.createMediaStreamSource(peerStream);
       speakAnalyserPeer = ctx.createAnalyser();
       speakAnalyserPeer.fftSize = 256;
       speakAnalyserPeer.smoothingTimeConstant = 0.72;
       src.connect(speakAnalyserPeer);
       speakBufPeer = new Uint8Array(speakAnalyserPeer.frequencyBinCount);
-      ctx.resume().catch(() => {});
-    } catch(e) { console.warn('speakAnalyserPeer failed', e); }
+      console.log('[GRID Speaking] Peer analyser ready, ctx state:', ctx.state, '| stream tracks:', peerStream.getAudioTracks().length);
+    } catch(e) { console.warn('[GRID Speaking] Peer analyser failed:', e); }
   } else {
-    console.log('[GRID] Speaking detection: no peer stream yet, peer analyser skipped');
+    console.log('[GRID Speaking] No peer stream yet, will retry on next startSpeakingDetection call');
   }
 
   // Unified RAF loop — both canvases in one frame
@@ -5805,21 +5854,8 @@ window.endCallUI = function() {
   for (const k in callPeerVol) delete callPeerVol[k];
 };
 
-// ── Patch startCallWebRTC to start speaking detection on track received ──
-const _origStartCallWebRTC = startCallWebRTC;
-window.startCallWebRTC = async function(peerUsername, isInitiator) {
-  await _origStartCallWebRTC(peerUsername, isInitiator);
-  // Re-attach speaking detection when track arrives
-  const origOnTrack = callPc ? callPc.ontrack : null;
-  if (callPc) {
-    callPc.ontrack = function(e) {
-      if (origOnTrack) origOnTrack.call(this, e);
-      setTimeout(() => {
-        if (callActive) startSpeakingDetection();
-      }, 500);
-    };
-  }
-};
+// ── startCallWebRTC wrapped — speaking detection запускается в самом ontrack ──
+// (patch удалён: ontrack уже вызывает startSpeakingDetection напрямую)
 </script>
 <script>
 // ══════════════════════════════════════

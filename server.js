@@ -166,6 +166,39 @@ app.post('/api/avatar', async (req, res) => {
   }
 });
 
+// ── ICE Servers API — позволяет настраивать TURN через Railway env vars ──
+// Установи в Railway: TURN_URL, TURN_USERNAME, TURN_CREDENTIAL
+// Например: TURN_URL=turn:your-server.com:3478
+app.get('/api/ice-servers', (req, res) => {
+  const servers = [];
+
+  // Если в env есть кастомный TURN — добавляем его первым (высший приоритет)
+  if (process.env.TURN_URL) {
+    const entry = { urls: process.env.TURN_URL };
+    if (process.env.TURN_USERNAME) entry.username = process.env.TURN_USERNAME;
+    if (process.env.TURN_CREDENTIAL) entry.credential = process.env.TURN_CREDENTIAL;
+    servers.push(entry);
+
+    // TCP fallback для того же сервера
+    if (!process.env.TURN_URL.includes('transport=')) {
+      const tcpEntry = { urls: process.env.TURN_URL + '?transport=tcp' };
+      if (process.env.TURN_USERNAME) tcpEntry.username = process.env.TURN_USERNAME;
+      if (process.env.TURN_CREDENTIAL) tcpEntry.credential = process.env.TURN_CREDENTIAL;
+      servers.push(tcpEntry);
+    }
+  }
+
+  // Если в env есть второй TURN — тоже добавляем
+  if (process.env.TURN_URL_2) {
+    const entry2 = { urls: process.env.TURN_URL_2 };
+    if (process.env.TURN_USERNAME_2) entry2.username = process.env.TURN_USERNAME_2;
+    if (process.env.TURN_CREDENTIAL_2) entry2.credential = process.env.TURN_CREDENTIAL_2;
+    servers.push(entry2);
+  }
+
+  res.json({ iceServers: servers });
+});
+
 const channels = { 'общий': [], 'игры': [], 'фидбек': [] };
 const onlineUsers = new Map();
 const dmHistory = new Map();
