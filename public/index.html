@@ -6466,7 +6466,17 @@ const LavaLamp = (function(){
   }
 
   let running = false;
-  function loop() {
+  let _rafId = null;
+  let _paused = false;
+  let _lastFrame = 0;
+  const TARGET_MS = 50; // ~20fps — smooth enough for slow blobs, ~60% less GPU than 60fps
+
+  function loop(ts) {
+    _rafId = requestAnimationFrame(loop);
+    if (_paused) return;
+    if (ts - _lastFrame < TARGET_MS) return;
+    _lastFrame = ts;
+
     for (const inst of canvases) {
       const {ctx,W,H} = inst;
       ctx.clearRect(0,0,W,H);
@@ -6486,8 +6496,12 @@ const LavaLamp = (function(){
         ctx.fillStyle=g; ctx.fill();
       }
     }
-    requestAnimationFrame(loop);
   }
+
+  // Pause animation when window is hidden or not focused — zero GPU when minimised
+  document.addEventListener('visibilitychange', () => { _paused = document.hidden; });
+  window.addEventListener('blur',  () => { _paused = true;  });
+  window.addEventListener('focus', () => { _paused = false; _lastFrame = 0; });
 
   function start() {
     const vw=window.innerWidth, vh=window.innerHeight;
@@ -6501,7 +6515,10 @@ const LavaLamp = (function(){
 
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',start); else start();
 
-  return cfg;
+  return Object.assign(cfg, {
+    get _paused() { return _paused; },
+    set _paused(v) { _paused = v; if(!v) _lastFrame = 0; }
+  });
 })();
 
 
@@ -6512,6 +6529,9 @@ const LavaLamp = (function(){
 function applyThemeMode(mode, blur, opacity, speed, intensity, save) {
   const isGlass = (mode === 'glass');
   document.body.classList.toggle('glass', isGlass);
+
+  // Pause lava animation entirely when glass is off — no point burning GPU
+  if (typeof LavaLamp !== 'undefined') LavaLamp._paused = !isGlass || document.hidden;
 
   if (isGlass) {
     const op  = Math.max(0.1, opacity / 100).toFixed(2);
