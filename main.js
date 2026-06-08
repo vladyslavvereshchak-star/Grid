@@ -97,9 +97,11 @@ app.on('second-instance', () => {
 });
 
 function injectTitlebar() {
+  // Guard: don't inject if page already has the native #etb titlebar from index.html
   mainWindow.webContents.executeJavaScript(`
     (function() {
-      if (document.getElementById('__grid_titlebar')) return;
+      // If index.html has its own titlebar (#etb), skip injection entirely
+      if (document.getElementById('etb') || document.getElementById('__grid_titlebar')) return;
 
       const bar = document.createElement('div');
       bar.id = '__grid_titlebar';
@@ -190,7 +192,7 @@ function createWindow() {
     minHeight: 500,
     frame: false,
     titleBarStyle: 'hidden',
-    backgroundColor: '#0c0d0e',
+    backgroundColor: '#060708',
     icon: path.join(__dirname, 'public', 'icon.png'),
     webPreferences: {
       nodeIntegration: false,
@@ -204,9 +206,9 @@ function createWindow() {
 
   mainWindow.webContents.on('did-finish-load', () => {
     injectTitlebar();
-    // Восстанавливаем зум
+    // Apply zoom only via Electron (CSS zoom in index.html must be removed or set to 1)
     const zoom = loadZoomFactor();
-    mainWindow.webContents.setZoomFactor(zoom);
+    if (zoom !== 1.0) mainWindow.webContents.setZoomFactor(zoom);
   });
 
   mainWindow.once('ready-to-show', () => {

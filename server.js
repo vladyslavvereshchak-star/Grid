@@ -200,6 +200,16 @@ loadHistory();
 
 const voiceChannels = { 'голос-1': new Set(), 'голос-2': new Set() };
 
+// ── Heartbeat — Railway kills idle WS after ~30s without activity ──
+const HEARTBEAT_INTERVAL = 20000; // 20s ping
+setInterval(() => {
+  wss.clients.forEach(ws => {
+    if (ws.isAlive === false) { ws.terminate(); return; }
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, HEARTBEAT_INTERVAL);
+
 function dmKey(a, b) { return [a, b].sort().join('|'); }
 
 function broadcast(data, excludeWs = null) {
@@ -245,6 +255,9 @@ function broadcastVoiceState() {
 }
 
 wss.on('connection', (ws, req) => {
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
+
   ws.on('message', async (raw) => {
     let data;
     try { data = JSON.parse(raw); } catch { return; }
@@ -254,6 +267,17 @@ wss.on('connection', (ws, req) => {
         const user = jwt.verify(data.token, JWT_SECRET);
         const result = await pool.query('SELECT avatar FROM users WHERE id=$1', [user.id]);
         const avatar = result.rows[0]?.avatar || null;
+
+        // ── Kick existing session for same user (prevents ghost WS) ──
+        for (const [existingWs, existingUser] of onlineUsers) {
+          if (existingUser.username === user.username && existingWs !== ws) {
+            sendTo(existingWs, { type: 'kicked', reason: 'New session opened' });
+            existingWs.terminate();
+            onlineUsers.delete(existingWs);
+            break;
+          }
+        }
+
         onlineUsers.set(ws, {
           id: user.id, username: user.username, color: user.color,
           avatar, channel: 'общий', voiceChannel: null
@@ -292,6 +316,8 @@ wss.on('connection', (ws, req) => {
     switch (data.type) {
       case 'message': {
         const ch = data.channel || user.channel;
+        if (!data.text || typeof data.text !== 'string') break;
+        if (data.text.length > 4000) break; // server-side length guard
         const msg = {
           type: 'message',
           id: Date.now() + Math.random(),
@@ -315,6 +341,8 @@ wss.on('connection', (ws, req) => {
       }
 
       case 'dm': {
+        if (!data.text || typeof data.text !== 'string') break;
+        if (data.text.length > 4000) break;
         const recipientWs = findWsByUsername(data.to);
         const key = dmKey(user.username, data.to);
         const msg = {
@@ -328,7 +356,9 @@ wss.on('connection', (ws, req) => {
           time: new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })
         };
         if (!dmHistory.has(key)) dmHistory.set(key, []);
-        dmHistory.get(key).push(msg);
+        const hist = dmHistory.get(key);
+        hist.push(msg);
+        if (hist.length > 200) hist.shift(); // cap DM history in memory
         sendTo(ws, msg);
         if (recipientWs) sendTo(recipientWs, msg);
         // Save to DB
