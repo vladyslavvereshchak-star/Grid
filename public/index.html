@@ -2970,29 +2970,24 @@ const ICE_CONFIG = {
   iceCandidatePoolSize: 10,
   iceTransportPolicy: 'all',
   iceServers: [
-    // ── STUN (публичные, бесплатно) ──────────────────────────────────────────
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun.cloudflare.com:3478' },
     { urls: 'stun:stun.stunprotocol.org:3478' },
-    // ── TURN от metered.ca (open relay project) ───────────────────────────────
-    // Порт 80 / UDP — работает даже за строгим firewall
+    // TURN: openrelay.metered.ca
     { urls: 'turn:openrelay.metered.ca:80',
       username: 'openrelayproject', credential: 'openrelayproject' },
-    // Порт 80 TCP
     { urls: 'turn:openrelay.metered.ca:80?transport=tcp',
       username: 'openrelayproject', credential: 'openrelayproject' },
-    // Порт 443 TCP (через HTTPS) — пробивает большинство корпоративных NAT
     { urls: 'turn:openrelay.metered.ca:443',
       username: 'openrelayproject', credential: 'openrelayproject' },
     { urls: 'turns:openrelay.metered.ca:443',
       username: 'openrelayproject', credential: 'openrelayproject' },
-    // ── FreeSUN TURN (резервный) ──────────────────────────────────────────────
+    // TURN резервные
     { urls: 'turn:freestun.net:3479',
       username: 'free', credential: 'free' },
     { urls: 'turns:freestun.net:5350',
       username: 'free', credential: 'free' },
-    // ── numb.viagenie.ca (резервный) ─────────────────────────────────────────
     { urls: 'turn:numb.viagenie.ca',
       username: 'webrtc@live.com', credential: 'muazkh' },
   ]
@@ -3422,7 +3417,7 @@ function handleMsg(data) {
 
     // ── CALL SIGNALING ──
     case 'call_invite':  handleCallInvite(data);  break;
-    case 'call_accept':  handleCallAccepted(data); break;
+    case 'call_accept':  (window.handleCallAccepted || handleCallAccepted)(data); break;
     case 'call_decline': handleCallDeclined(data); break;
     case 'call_end':     handleCallEnded(data);    break;
     case 'call_offer':   handleCallOffer(data);    break;
@@ -4051,7 +4046,7 @@ function markWidgetConnected() {
 // Callee clicks widget to join
 function joinCallFromWidget(btn) {
   if (!callPeer) return;
-  acceptIncomingCall();
+  (window.acceptIncomingCall || acceptIncomingCall)();
 }
 
 // Handle incoming call_widget message (shown in callee's DM chat)
@@ -4101,7 +4096,7 @@ function renderCallWidget(data) {
 
 function acceptIncomingCallFromWidget() {
   if (!callPeer) return;
-  acceptIncomingCall();
+  (window.acceptIncomingCall || acceptIncomingCall)();
   // Widget will update to "In Call" when WebRTC connects
 }
 
@@ -4305,43 +4300,15 @@ async function startCallWebRTC(peerUsername, isInitiator) {
     if (e.candidate) wsSend({ type: 'call_ice', to: peerUsername, candidate: e.candidate });
   };
 
-  // Диагностика ICE — логируем состояния
-  callPc.oniceconnectionstatechange = () => {
-    const s = callPc ? callPc.iceConnectionState : '?';
-    console.log('[GRID WebRTC] ICE:', s);
-    if (s === 'failed') {
-      // ICE провалился — пробуем Ice Restart
-      console.warn('[GRID WebRTC] ICE failed, trying ICE restart...');
-      if (isInitiator && callPc) {
-        callPc.restartIce();
-        callPc.createOffer({ iceRestart: true }).then(offer => {
-          offer.sdp = patchOpusSDP(offer.sdp);
-          return callPc.setLocalDescription(offer).then(() => {
-            wsSend({ type: 'call_offer', to: peerUsername, sdp: offer });
-          });
-        }).catch(e => console.error('[GRID] ICE restart failed:', e));
-      }
-    }
-    if (s === 'disconnected') {
-      setTimeout(() => {
-        if (callPc && callPc.iceConnectionState === 'disconnected') {
-          console.warn('[GRID WebRTC] Still disconnected after 4s');
-        }
-      }, 4000);
-    }
-  };
-
   callPc.ontrack = (e) => {
     if (e.track.kind !== 'audio') return;
-    console.log('[GRID WebRTC] ontrack fired, track id:', e.track.id, 'enabled:', e.track.enabled);
+    console.log('[GRID WebRTC] ontrack — remote audio track received');
 
     const outputGainRatio = (typeof outputGainValue !== 'undefined' ? outputGainValue : 200) / 100;
-
     const remoteStream = (e.streams && e.streams[0])
       ? e.streams[0]
       : (() => { const ms = new MediaStream(); ms.addTrack(e.track); return ms; })();
 
-    // Получаем или создаём audio элемент
     let audio = document.getElementById('call-remote-audio');
     if (!audio) {
       audio = document.createElement('audio');
@@ -4351,22 +4318,15 @@ async function startCallWebRTC(peerUsername, isInitiator) {
       audio.style.display = 'none';
       document.body.appendChild(audio);
     }
+    // Сохраняем RAW поток — нужен для speaking detection analyser
     audio._rawStream = remoteStream;
 
-    // ── Пайплайн: remoteStream → GainNode → dest → <audio>
-    // Переиспользуем callAudioCtx (уже активный) вместо создания нового
     try {
-      const ctx = (callAudioCtx && callAudioCtx.state !== 'closed')
-        ? callAudioCtx
-        : new (window.AudioContext || window.webkitAudioContext)();
-      if (!callAudioCtx || callAudioCtx.state === 'closed') callAudioCtx = ctx;
-
-      ctx.resume().catch(() => {});
-
-      const outSrc  = ctx.createMediaStreamSource(remoteStream);
-      const outGain = ctx.createGain();
+      const outCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const outSrc  = outCtx.createMediaStreamSource(remoteStream);
+      const outGain = outCtx.createGain();
       outGain.gain.value = outputGainRatio;
-      const outDest = ctx.createMediaStreamDestination();
+      const outDest = outCtx.createMediaStreamDestination();
       outSrc.connect(outGain);
       outGain.connect(outDest);
       callOutputGainNode = outGain;
@@ -4374,53 +4334,65 @@ async function startCallWebRTC(peerUsername, isInitiator) {
       audio.srcObject = outDest.stream;
       audio.volume = 1;
       audio.muted = callSoundMuted;
-
-      const playPromise = audio.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(err => {
-          console.warn('[GRID] audio.play() blocked:', err.message, '— retrying on click');
-          document.addEventListener('click', () => audio.play().catch(() => {}), { once: true });
-        });
-      }
+      audio.play().catch(() => {
+        document.addEventListener('click', () => audio.play().catch(() => {}), { once: true });
+      });
       applySinkId(audio);
-      console.log('[GRID WebRTC] Audio pipeline ready via AudioContext gain');
+      outCtx.resume().catch(() => {});
     } catch(err) {
-      // Fallback — напрямую в audio.srcObject без буста
-      console.warn('[GRID WebRTC] AudioContext pipeline failed, direct fallback:', err.message);
+      console.warn('[GRID WebRTC] AudioContext fallback:', err.message);
       audio.srcObject = remoteStream;
       audio.volume = Math.min(1, outputGainRatio);
       audio.muted = callSoundMuted;
-      audio.play().catch(err2 => {
-        console.warn('[GRID] fallback audio.play() blocked:', err2.message);
+      audio.play().catch(() => {
         document.addEventListener('click', () => audio.play().catch(() => {}), { once: true });
       });
       applySinkId(audio);
       callOutputGainNode = { gain: {
-        get value() { return audio.volume; },
+        get value()  { return audio.volume; },
         set value(v) { audio.volume = Math.min(1, Math.max(0, v)); }
       }};
-      console.log('[GRID WebRTC] Audio pipeline ready via direct srcObject');
     }
+
+    // ── Перезапускаем speaking detection теперь когда аудио реально есть ──
+    // Небольшая задержка чтобы srcObject успел примениться
+    setTimeout(() => {
+      if (typeof startSpeakingDetection === 'function') {
+        console.log('[GRID WebRTC] Restarting speaking detection after ontrack');
+        startSpeakingDetection();
+      }
+    }, 400);
   };
 
   callPc.onconnectionstatechange = () => {
-    if (callPc && callPc.connectionState === 'connected') {
-      document.getElementById('call-state-label').textContent = 'Connected · Audio live';
+    const state = callPc ? callPc.connectionState : '?';
+    console.log('[GRID WebRTC] connectionState:', state);
+
+    if (state === 'connected') {
+      const stLbl = document.getElementById('call-state-label');
+      if (stLbl) stLbl.textContent = 'Connected · Audio live';
       applyHighBitrate(callPc);
-      // Mark bar as connected — changes icon/color
       const bar = document.getElementById('call-inline-bar');
       if (bar) bar.classList.add('connected');
       const lbl = document.getElementById('cbar-status-label');
       if (lbl) { lbl.textContent = 'CONNECTED'; lbl.className = 'cbar-status-label connected'; }
       const stageStatus = document.getElementById('chat-call-status-label');
       if (stageStatus) stageStatus.textContent = 'IN CALL';
-      const stagePeerSub = document.getElementById('chat-call-sub-peer');
-      if (stagePeerSub) stagePeerSub.textContent = 'audio live';
-      // Update chat widget — stop ringing timer, show "In Call"
       markWidgetConnected();
+
+      // ── Гарантированно показываем connected UI и запускаем detection ──
+      if (typeof showConnectedUI === 'function') {
+        setTimeout(showConnectedUI, 200);
+      }
     }
-    if (callPc && (callPc.connectionState === 'failed' || callPc.connectionState === 'disconnected')) {
-      document.getElementById('call-state-label').textContent = 'Connection lost';
+    if (state === 'failed') {
+      const stLbl = document.getElementById('call-state-label');
+      if (stLbl) stLbl.textContent = 'Connection failed';
+      console.error('[GRID WebRTC] ICE/DTLS failed — check TURN servers');
+    }
+    if (state === 'disconnected') {
+      const stLbl = document.getElementById('call-state-label');
+      if (stLbl) stLbl.textContent = 'Reconnecting...';
     }
   };
 
@@ -5409,54 +5381,30 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// ── UI ZOOM ──
+// ── UI ZOOM — Electron-native GPU zoom (no blur, no layout break) ──
 function applyUIZoom(pct) {
-  const v = Math.min(200, Math.max(80, parseInt(pct)));
+  const v = Math.min(200, Math.max(50, parseInt(pct)));
   localStorage.setItem('grid_ui_zoom', v);
-
-  // Clear any legacy html zoom
-  document.documentElement.style.zoom = '';
-
-  const app = document.getElementById('app');
-  if (app) {
-    if (v === 100) {
-      app.style.cssText = app.style.cssText
-        .replace(/transform[^;]*;?/g, '')
-        .replace(/transform-origin[^;]*;?/g, '')
-        .replace(/width[^;]*;?/g, '')
-        .replace(/height[^;]*;?/g, '');
-      app.style.transform = '';
-      app.style.transformOrigin = '';
-      app.style.width = '';
-      app.style.height = '';
-    } else {
-      const s = v / 100;
-      app.style.transformOrigin = 'top left';
-      app.style.transform = 'scale(' + s + ')';
-      app.style.width  = (100 / s).toFixed(4) + 'vw';
-      app.style.height = (100 / s).toFixed(4) + 'vh';
-    }
+  _clearCSSZoom();
+  if (window.electronAPI && window.electronAPI.setZoom) {
+    window.electronAPI.setZoom(v / 100);
+  } else {
+    document.documentElement.style.zoom = (v / 100).toString();
   }
-
-  // Modal and login scale the same way (they are fixed, need separate scaling)
-  var overlays = ['modal-overlay', 'login-screen'];
-  overlays.forEach(function(id) {
+  _syncZoomUI(v);
+}
+function _clearCSSZoom() {
+  ['app', 'modal-overlay', 'login-screen'].forEach(function(id) {
     var el = document.getElementById(id);
     if (!el) return;
-    if (v === 100) {
-      el.style.transform = '';
-      el.style.transformOrigin = '';
-      el.style.width = '';
-      el.style.height = '';
-    } else {
-      var s = v / 100;
-      el.style.transformOrigin = 'top left';
-      el.style.transform = 'scale(' + s + ')';
-      el.style.width  = (100 / s).toFixed(4) + 'vw';
-      el.style.height = (100 / s).toFixed(4) + 'vh';
-    }
+    el.style.transform = '';
+    el.style.transformOrigin = '';
+    el.style.width = '';
+    el.style.height = '';
   });
-
+  document.documentElement.style.zoom = '';
+}
+function _syncZoomUI(v) {
   var slider = document.getElementById('ui-zoom-slider');
   if (slider) { slider.value = v; updateSliderTrack(slider); }
   var disp = document.getElementById('zoom-val-display');
@@ -5465,21 +5413,18 @@ function applyUIZoom(pct) {
     btn.classList.toggle('active', parseInt(btn.dataset.zoom) === v);
   });
 }
-// Emergency zoom reset: Ctrl+0
 document.addEventListener('keydown', function(e) {
   if ((e.ctrlKey || e.metaKey) && (e.key === '0' || e.key === 'Numpad0')) {
-    e.preventDefault();
-    applyUIZoom(100);
+    e.preventDefault(); applyUIZoom(100);
   }
 });
-// Restore zoom on load
 (function() {
-  document.documentElement.style.zoom = '';
-  var saved = localStorage.getItem('grid_ui_zoom');
-  if (!saved || parseInt(saved) === 100) return;
-  document.addEventListener('DOMContentLoaded', function() {
-    applyUIZoom(parseInt(saved));
-  });
+  _clearCSSZoom();
+  var saved = parseInt(localStorage.getItem('grid_ui_zoom') || '100');
+  if (!window.electronAPI && saved !== 100) {
+    document.documentElement.style.zoom = (saved / 100).toString();
+  }
+  document.addEventListener('DOMContentLoaded', function() { _syncZoomUI(saved); });
 })();
 
 document.getElementById('username-input').focus();
@@ -5579,18 +5524,23 @@ function startSpeakingDetection() {
     } catch(e) { console.warn('speakAnalyserMe failed', e); }
   }
 
-  // Peer audio → analyser (tap outDest stream set as srcObject)
+  // Peer audio → analyser
+  // Используем _rawStream (чистый WebRTC поток) а не srcObject (уже обработанный через GainNode)
   const peerAudio = document.getElementById('call-remote-audio');
-  if (peerAudio && peerAudio.srcObject) {
+  const peerStream = peerAudio && (peerAudio._rawStream || peerAudio.srcObject);
+  if (peerStream) {
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const src = ctx.createMediaStreamSource(peerAudio.srcObject);
+      const src = ctx.createMediaStreamSource(peerStream);
       speakAnalyserPeer = ctx.createAnalyser();
       speakAnalyserPeer.fftSize = 256;
       speakAnalyserPeer.smoothingTimeConstant = 0.72;
       src.connect(speakAnalyserPeer);
       speakBufPeer = new Uint8Array(speakAnalyserPeer.frequencyBinCount);
+      ctx.resume().catch(() => {});
     } catch(e) { console.warn('speakAnalyserPeer failed', e); }
+  } else {
+    console.log('[GRID] Speaking detection: no peer stream yet, peer analyser skipped');
   }
 
   // Unified RAF loop — both canvases in one frame
