@@ -804,6 +804,14 @@ body.electron .app{height:calc(100vh - 32px)}
 /* Signal bars */
 #cbar-voice-status{
   display:flex;align-items:center;gap:8px;flex:1;min-width:0;
+  border-radius:6px;padding:2px 4px;
+  transition:background 0.2s;
+}
+#cbar-voice-status:hover{
+  background:rgba(0,229,255,0.06);
+}
+#cbar-voice-status:hover #cbar-status-label{
+  color:var(--accent);
 }
 #cbar-voice-icon{
   width:26px;height:26px;border-radius:6px;
@@ -1061,8 +1069,6 @@ body.electron .app{height:calc(100vh - 32px)}
 .cbar-signal-bar:nth-child(3){ height:12px }
 .cbar-signal-bar:nth-child(4){ height:15px }
 #call-inline-bar.active .cbar-signal-bar{ opacity:1 }
-#cbar-voice-status:hover { background: rgba(0,229,255,0.05); border-radius: 6px; }
-#cbar-voice-status:hover #cbar-status-label { color: var(--accent); }
 #call-inline-bar.ringing .cbar-signal-bar:nth-child(3),
 #call-inline-bar.ringing .cbar-signal-bar:nth-child(4){ opacity:0.2 }
 
@@ -2210,8 +2216,8 @@ input[type=range]:focus{outline:none}
   
   <!-- ── DISCORD-STYLE CALL BAR — bottom of sub-panel ── -->
   <div id="call-inline-bar">
-    <!-- Voice connected status — click → open DM chat with peer -->
-    <div id="cbar-voice-status" onclick="callBarGoToChat()" title="Open chat" style="cursor:pointer;flex:1;display:flex;align-items:center;gap:8px;min-width:0;padding:0 6px 0 0">
+    <!-- Voice connected status -->
+    <div id="cbar-voice-status" onclick="callBarGoToChat()" title="Open chat with peer" style="cursor:pointer">
       <div id="cbar-voice-icon"><i class="ti ti-phone"></i></div>
       <div id="cbar-voice-info">
         <div id="cbar-status-label" class="cbar-status-label">CALLING</div>
@@ -3676,19 +3682,13 @@ function declineIncomingCall() {
   }
 }
 
-// ── HANG UP (оба) ──
-// Клик по левой части плашки звонка → открыть DM чат с собеседником
+// Клик по плашке звонка → переход в DM чат с собеседником
 function callBarGoToChat() {
   if (!callPeer) return;
-  const tag = callPeer.username;
-  if (friends[tag]) {
-    openDm(tag);
-  } else {
-    // Если пир есть но не в friends (edge-case) — просто переключаем вид
-    console.log('[GRID] callBarGoToChat: peer not in friends list:', tag);
-  }
+  if (typeof openDm === 'function') openDm(callPeer.username);
 }
 
+// ── HANG UP (оба) ──
 function endCall(silent = false) {
   if (callRingTimeout)   { clearTimeout(callRingTimeout);   callRingTimeout = null; }
   if (callSoloTimeout)   { clearTimeout(callSoloTimeout);   callSoloTimeout = null; }
@@ -4163,7 +4163,13 @@ function toggleCallMute() {
   const avMeWrap = document.getElementById('cbar-av-me-wrap');
   if (avMeWrap) avMeWrap.classList.toggle('muted', callMuted);
   if (localStream) localStream.getAudioTracks().forEach(t => t.enabled = !callMuted);
-  if (callStream)  callStream.getAudioTracks().forEach(t => t.enabled = !callMuted);
+  if (callStream) {
+    callStream.getAudioTracks().forEach(t => t.enabled = !callMuted);
+    // Если mute — gate не должен его перебить
+    if (callMuted && window._callNoiseGateInterval) {
+      if (window._callNoiseGateOpen) window._callNoiseGateOpen = false;
+    }
+  }
 }
 
 function toggleCallSound() {
@@ -4275,22 +4281,27 @@ async function startCallWebRTC(peerUsername, isInitiator) {
     const base = { channelCount: { ideal: 1 }, sampleRate: { ideal: 48000 }, latency: { ideal: 0.01 } };
     if (voiceInputDeviceId) base.deviceId = { exact: voiceInputDeviceId };
     if (voiceProfile === 'studio') {
-      // Raw — no processing at all
       return { ...base, echoCancellation: false, noiseSuppression: false, autoGainControl: false };
     } else if (voiceProfile === 'isolation') {
-      // Max everything
-      return { ...base, echoCancellation: true, noiseSuppression: true, autoGainControl: true,
-        googEchoCancellation: true, googNoiseSuppression: true, googNoiseSuppression2: true,
-        googAutoGainControl: true, googHighpassFilter: true, googTypingNoiseDetection: true };
-    } else {
-      // Custom — use audioSettings toggles
+      // AGC выключен — он усиливает тишину и поднимает фоновый шум
       return { ...base,
-        echoCancellation: audioSettings.echo, noiseSuppression: audioSettings.noise,
-        autoGainControl: audioSettings.gain,
-        googEchoCancellation: audioSettings.echo, googNoiseSuppression: audioSettings.noise,
-        googNoiseSuppression2: audioSettings.noise, googAutoGainControl: audioSettings.gain,
-        googAutoGainControl2: audioSettings.gain, googHighpassFilter: true,
-        googTypingNoiseDetection: true };
+        echoCancellation:         true,  noiseSuppression:     true,
+        autoGainControl:          false,
+        googEchoCancellation:     true,  googEchoCancellation2: true,
+        googNoiseSuppression:     true,  googNoiseSuppression2: true,
+        googAutoGainControl:      false, googAutoGainControl2:  false,
+        googHighpassFilter:       true,  googTypingNoiseDetection: true,
+        googAudioMirroring:       false,
+      };
+    } else {
+      return { ...base,
+        echoCancellation:     audioSettings.echo,  noiseSuppression:  audioSettings.noise,
+        autoGainControl:      false,                // всегда выкл — AGC поднимает фон
+        googEchoCancellation: audioSettings.echo,  googEchoCancellation2: audioSettings.echo,
+        googNoiseSuppression: audioSettings.noise, googNoiseSuppression2: audioSettings.noise,
+        googAutoGainControl:  false, googAutoGainControl2: false,
+        googHighpassFilter:   true,  googTypingNoiseDetection: true,
+      };
     }
   };
 
@@ -4308,105 +4319,127 @@ async function startCallWebRTC(peerUsername, isInitiator) {
     }
   }
 
-  // ── NOISE GATE — Web Audio пороговый гейт ─────────────────────────────────
-  // Работает как Discord "Noise Gate": пропускает звук только когда уровень > порога.
-  // Отрезает игровой шум, вентиляторы, фоновый гул, кулеры.
-  // AudioContext создаётся здесь — это вызывается из user gesture (Click Call / Accept),
-  // поэтому ctx.state сразу 'running', без проблемы autoplay policy.
-  let webrtcStream = callStream;
+  // ── PeerConnection — RAW поток напрямую (AEC работает только так) ────────
+  // НИКОГДА не пропускать через createMediaStreamDestination в send path —
+  // это убивает Chrome AEC и ты слышишь себя через чужие колонки.
+  callPc = new RTCPeerConnection(ICE_CONFIG);
+  callStream.getTracks().forEach(t => callPc.addTrack(t, callStream));
+  callStream.getAudioTracks().forEach(t => t.enabled = !callMuted);
 
+  // ── УМНЫЙ NOISE GATE (AEC-safe) ───────────────────────────────────────────
+  // Анализируем уровень в read-only AudioContext (НЕ трогаем сам поток).
+  // Гейт = track.enabled toggle. Chrome AEC продолжает работать полноценно.
+  //
+  // АДАПТИВНЫЙ порог:
+  //   1. Первые 1.5с — калибровка фона (измеряем ambient уровень)
+  //   2. Порог = ambient + MARGIN (обычно +10dB)
+  //   3. Если ambient внезапно вырос (фон стал громче) — адаптируемся
+  //
+  // Attack 0ms (мгновенно открываем — не режем начало слов)
+  // Release 220ms (медленно закрываем — не режем конец слов)
   try {
     const ngCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
     await ngCtx.resume();
+    callAudioCtx = ngCtx;
 
-    const src  = ngCtx.createMediaStreamSource(callStream);
-
-    // HPF — режет гул ниже 80Гц (вентиляторы, бас)
-    const hpf  = ngCtx.createBiquadFilter();
-    hpf.type   = 'highpass';
-    hpf.frequency.value = 80;
-    hpf.Q.value = 0.7;
-
-    // Компрессор — выравнивает уровень голоса
-    const comp = ngCtx.createDynamicsCompressor();
-    comp.threshold.value = -24;
-    comp.knee.value      = 12;
-    comp.ratio.value     = 4;
-    comp.attack.value    = 0.003;
-    comp.release.value   = 0.15;
-
-    // Noise Gate gain node
-    const gateGain = ngCtx.createGain();
-    gateGain.gain.value = 0;
-
-    // Analyser для измерения RMS уровня
+    const src      = ngCtx.createMediaStreamSource(callStream);
     const analyser = ngCtx.createAnalyser();
     analyser.fftSize = 512;
-    analyser.smoothingTimeConstant = 0.15;
-    const ngBuf = new Float32Array(analyser.fftSize);
+    analyser.smoothingTimeConstant = 0.1; // быстрый отклик
+    const buf = new Float32Array(analyser.fftSize);
+    src.connect(analyser);
+    // src → analyser ТОЛЬКО, никаких dest → WebRTC
 
-    const dest = ngCtx.createMediaStreamDestination();
-    src.connect(hpf);
-    hpf.connect(comp);
-    comp.connect(analyser);
-    comp.connect(gateGain);
-    gateGain.connect(dest);
+    const MARGIN_DB     = 10;   // порог = ambient + 10dB
+    const RELEASE_MS    = 220;  // задержка закрытия
+    const CALIBR_MS     = 1500; // время калибровки фона
+    const ADAPT_DECAY   = 0.998;// как быстро ambient снижается (медленно)
+    const ADAPT_RISE    = 0.05; // как быстро ambient растёт (быстро)
 
-    webrtcStream = dest.stream;
+    let ambientDb    = -60;
+    let gateOpen     = false;
+    let closeTimer   = null;
+    let calibrating  = true;
+    let calibSamples = [];
 
-    const getGateThresholdDb = () => parseFloat(localStorage.getItem('grid_noise_gate_db') || '-42');
-    let ngOpen = false;
+    // Пользовательский offset из настроек (слайдер 0–100 → -8…+12 dB добавки)
+    const getUserMarginOffset = () => {
+      const pct = parseInt(localStorage.getItem('grid_noisegate_threshold') || '15');
+      return (pct / 100) * 20 - 8; // 0% → -8dB (мягкий), 100% → +12dB (жёсткий)
+    };
+
+    const applyGate = (open) => {
+      if (callMuted) return; // уважаем mute
+      const tracks = callStream.getAudioTracks();
+      tracks.forEach(t => { t.enabled = open; });
+      gateOpen = open;
+    };
 
     window._callNoiseGateInterval = setInterval(() => {
-      if (ngCtx.state === 'closed') return;
-      analyser.getFloatTimeDomainData(ngBuf);
+      if (!ngCtx || ngCtx.state === 'closed') return;
+      analyser.getFloatTimeDomainData(buf);
       let sum = 0;
-      for (let i = 0; i < ngBuf.length; i++) sum += ngBuf[i] * ngBuf[i];
-      const rms = Math.sqrt(sum / ngBuf.length);
-      const db  = rms > 1e-6 ? 20 * Math.log10(rms) : -100;
-      const thr = getGateThresholdDb();
+      for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+      const rms = Math.sqrt(sum / buf.length);
+      const db  = rms > 1e-7 ? 20 * Math.log10(rms) : -100;
 
-      if (!ngOpen && db > thr) {
-        ngOpen = true;
-        gateGain.gain.setTargetAtTime(1, ngCtx.currentTime, 0.005);  // 5ms attack
-      } else if (ngOpen && db < thr - 4) {
-        ngOpen = false;
-        gateGain.gain.setTargetAtTime(0, ngCtx.currentTime, 0.18);   // 180ms release
+      if (calibrating) {
+        // Калибровка: собираем ambient за первые 1.5с
+        calibSamples.push(db);
+        if (calibSamples.length * 20 >= CALIBR_MS) {
+          calibrating = false;
+          // ambient = среднее нижних 30% значений (тихие моменты)
+          const sorted = [...calibSamples].sort((a, b) => a - b);
+          const slice  = sorted.slice(0, Math.max(1, Math.floor(sorted.length * 0.3)));
+          ambientDb    = slice.reduce((s, v) => s + v, 0) / slice.length;
+          console.log('[GRID Gate] Calibrated ambient:', ambientDb.toFixed(1), 'dBFS');
+        }
+        applyGate(true); // во время калибровки держим открытым
+        return;
       }
-      window._callNoiseGateLevel = db;
-      window._callNoiseGateOpen  = ngOpen;
+
+      // Адаптивное обновление ambient (только в тихие моменты — ниже порога)
+      const threshold = ambientDb + MARGIN_DB + getUserMarginOffset();
+      if (db < threshold) {
+        ambientDb = ambientDb * ADAPT_DECAY + db * (1 - ADAPT_DECAY);
+      } else {
+        // Если ambient резко вырос (включили музыку/игру) — адаптируемся быстрее
+        if (db - ambientDb > 20) ambientDb += (db - ambientDb) * ADAPT_RISE;
+      }
+
+      const effectiveThreshold = ambientDb + MARGIN_DB + getUserMarginOffset();
+
+      if (!gateOpen && db > effectiveThreshold) {
+        // ОТКРЫТЬ — мгновенно
+        if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
+        applyGate(true);
+      } else if (gateOpen && db <= effectiveThreshold) {
+        // ЗАКРЫТЬ — с задержкой release
+        if (!closeTimer) {
+          closeTimer = setTimeout(() => {
+            applyGate(false);
+            closeTimer = null;
+          }, RELEASE_MS);
+        }
+      } else if (!gateOpen && closeTimer) {
+        clearTimeout(closeTimer); closeTimer = null;
+      }
+
+      // Отладочные данные для speaking detection
+      window._callNoiseGateLevel     = db;
+      window._callNoiseGateAmbient   = ambientDb;
+      window._callNoiseGateThreshold = effectiveThreshold;
+      window._callNoiseGateOpen      = gateOpen;
     }, 20);
 
-    window._callNoiseGateCtx  = ngCtx;
-    callAudioCtx = ngCtx; // переиспользуем для speaking detection
-    window._callInputGainNode = gateGain;
-    console.log('[GRID NoiseGate] Ready — threshold:', getGateThresholdDb(), 'dBFS, ctx:', ngCtx.state);
+    window._callNoiseGateCtx = ngCtx;
+    window._callInputGainNode = { gain: { value: 1 } }; // stub для UI compat
+    console.log('[GRID Gate] Smart adaptive gate ready. Calibrating 1.5s...');
 
-  } catch(ngErr) {
-    console.warn('[GRID NoiseGate] Failed, raw stream:', ngErr.message);
-    // Fallback: старый AudioContext только для анализа
-    try {
-      if (!callAudioCtx || callAudioCtx.state === 'closed')
-        callAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      callAudioCtx.resume().catch(() => {});
-      const src = callAudioCtx.createMediaStreamSource(callStream);
-      const gainNode = callAudioCtx.createGain();
-      gainNode.gain.value = inputGainValue / 100;
-      src.connect(gainNode);
-      window._callInputGainNode = gainNode;
-      console.log('[GRID] Fallback AudioContext state:', callAudioCtx.state);
-    } catch(e) {
-      console.warn('[GRID] Fallback AudioContext failed:', e);
-      window._callInputGainNode = null;
-    }
+  } catch(e) {
+    console.warn('[GRID Gate] Setup failed, no gate:', e.message);
+    window._callInputGainNode = null;
   }
-
-  // ── WebRTC PeerConnection — используем обработанный поток ─────────────────
-  callPc = new RTCPeerConnection(ICE_CONFIG);
-  webrtcStream.getTracks().forEach(t => callPc.addTrack(t, webrtcStream));
-  // Mute применяем к обоим потокам на всякий случай
-  callStream.getAudioTracks().forEach(t => t.enabled = !callMuted);
-  webrtcStream.getAudioTracks().forEach(t => t.enabled = !callMuted);
 
   callPc.onicecandidate = (e) => {
     if (e.candidate) wsSend({ type: 'call_ice', to: peerUsername, candidate: e.candidate });
@@ -4608,14 +4641,15 @@ async function handleCallIce(data) {
 
 function closeCallWebRTC() {
   if (callPc) { callPc.close(); callPc = null; }
-  if (callStream) { callStream.getTracks().forEach(t => t.stop()); callStream = null; }
-  if (callAudioCtx) { callAudioCtx.close().catch(()=>{}); callAudioCtx = null; }
-  // Очищаем noise gate
+  if (callStream) { callStream.getTracks().forEach(t => { t.enabled = true; t.stop(); }); callStream = null; }
+  // Noise gate cleanup
   if (window._callNoiseGateInterval) { clearInterval(window._callNoiseGateInterval); window._callNoiseGateInterval = null; }
-  if (window._callNoiseGateCtx && window._callNoiseGateCtx !== callAudioCtx) {
-    window._callNoiseGateCtx.close().catch(()=>{});
-    window._callNoiseGateCtx = null;
-  }
+  window._callNoiseGateOpen = false;
+  window._callNoiseGateLevel = undefined;
+  window._callNoiseGateAmbient = undefined;
+  if (window._callNoiseGateCtx) { window._callNoiseGateCtx.close().catch(() => {}); window._callNoiseGateCtx = null; }
+  if (callAudioCtx && callAudioCtx !== window._callNoiseGateCtx) { callAudioCtx.close().catch(() => {}); }
+  callAudioCtx = null;
   callIceBuffer = [];
   const audio = document.getElementById('call-remote-audio');
   if (audio) { audio.srcObject = null; audio.remove(); }
@@ -6490,16 +6524,8 @@ function toggleNoiseGate(el) {
 function updateNoiseGateThreshold(val) {
   noiseGateThreshold = parseInt(val);
   localStorage.setItem('grid_noisegate_threshold', noiseGateThreshold);
-  // Маппинг: 0% = -65 dBFS (почти выключен), 100% = -20 dBFS (очень агрессивный)
-  // Рекомендуемые: 15-25% ≈ -56…-51 dBFS — режет фон но не режет речь
-  const dbVal = -65 + (noiseGateThreshold / 100) * 45;
-  localStorage.setItem('grid_noise_gate_db', dbVal.toFixed(1));
   const el = document.getElementById('noisegate-val');
   if (el) el.textContent = noiseGateThreshold + '%';
-  // Обновляем live если звонок активен
-  if (window._callNoiseGateCtx && window._callNoiseGateCtx.state !== 'closed') {
-    console.log('[GRID NoiseGate] Threshold updated:', dbVal.toFixed(1), 'dBFS');
-  }
 }
 
 function updateInputGain(val) {
