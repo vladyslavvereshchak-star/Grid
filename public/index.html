@@ -4404,25 +4404,20 @@ async function startCallWebRTC(peerUsername, isInitiator) {
       if (stLbl) stLbl.textContent = 'Connected · Audio live';
       applyHighBitrate(callPc);
 
-      // ── Safety net: проверяем что все transceivers sendrecv ──
-      // Если Chromium всё равно сбросил в recvonly — чиним через renegotiation
-      let needsRenegotiation = false;
-      callPc.getTransceivers().forEach(tc => {
-        if (tc.direction !== 'sendrecv') {
-          console.warn('[GRID WebRTC] Transceiver not sendrecv after connect! direction:', tc.direction, '→ fixing');
-          tc.direction = 'sendrecv';
-          needsRenegotiation = true;
-        }
+      // Диагностика — логируем реальные направления transceivers
+      callPc.getTransceivers().forEach((tc, i) => {
+        console.log(`[GRID WebRTC] Transceiver[${i}] direction: ${tc.direction}`,
+          '| sender track:', tc.sender.track?.label || 'none',
+          'enabled:', tc.sender.track?.enabled,
+          '| receiver track:', tc.receiver.track?.label || 'none');
       });
-      if (needsRenegotiation && callPc.signalingState === 'stable') {
-        // Пересогласовываем SDP чтобы применить sendrecv
-        callPc.createOffer().then(offer => {
-          offer.sdp = patchOpusSDP(offer.sdp);
-          return callPc.setLocalDescription(offer);
-        }).then(() => {
-          wsSend({ type: 'call_offer', to: callPeer ? callPeer.username : '', sdp: callPc.localDescription });
-        }).catch(e => console.warn('[GRID WebRTC] Renegotiation failed:', e));
-      }
+      callPc.getSenders().forEach((s, i) => {
+        console.log(`[GRID WebRTC] Sender[${i}]:`, s.track?.label, 'enabled:', s.track?.enabled, 'readyState:', s.track?.readyState);
+      });
+
+      // НЕ делаем renegotiation после connect — это ломает одностороннее аудио.
+      // Transceivers уже правильно настроены в offer/answer exchange.
+
       const bar = document.getElementById('call-inline-bar');
       if (bar) bar.classList.add('connected');
       const lbl = document.getElementById('cbar-status-label');
@@ -4430,16 +4425,16 @@ async function startCallWebRTC(peerUsername, isInitiator) {
       const stageStatus = document.getElementById('chat-call-status-label');
       if (stageStatus) stageStatus.textContent = 'IN CALL';
       markWidgetConnected();
-
-      // ── Гарантированно показываем connected UI и запускаем detection ──
-      if (typeof showConnectedUI === 'function') {
-        setTimeout(showConnectedUI, 200);
-      }
+      if (typeof showConnectedUI === 'function') setTimeout(showConnectedUI, 200);
     }
     if (state === 'failed') {
       const stLbl = document.getElementById('call-state-label');
-      if (stLbl) stLbl.textContent = 'Connection failed';
-      console.error('[GRID WebRTC] ICE/DTLS failed — check TURN servers');
+      if (stLbl) stLbl.textContent = 'Connection failed — retry';
+      console.error('[GRID WebRTC] Connection failed');
+      // ICE restart
+      if (callPc && isInitiator) {
+        callPc.restartIce();
+      }
     }
     if (state === 'disconnected') {
       const stLbl = document.getElementById('call-state-label');
@@ -4448,19 +4443,13 @@ async function startCallWebRTC(peerUsername, isInitiator) {
   };
 
   if (isInitiator) {
-    // КРИТИЧНО: явно ставим sendrecv на всех transceivers ПЕРЕД createOffer
-    // В Unified Plan (Chromium 128+) addTrack создаёт transceiver sendrecv,
-    // но лучше явно подтвердить чтобы избежать Chrome багов с direction
-    callPc.getTransceivers().forEach(tc => {
-      if (tc.direction !== 'sendrecv') {
-        console.log('[GRID WebRTC] Forcing transceiver sendrecv, was:', tc.direction);
-        tc.direction = 'sendrecv';
-      }
-    });
-    const offer = await callPc.createOffer(); // НЕ передаём offerToReceiveAudio — legacy option Unified Plan игнорирует неправильно
-    // Отключаем DTX (прерывистая передача) — он режет поток в паузах и даёт нарастающий эффект
+    // addTrack уже создаёт transceiver с direction=sendrecv в Unified Plan.
+    // Не трогаем transceivers руками — createOffer сам берёт актуальные направления.
+    const offer = await callPc.createOffer();
     offer.sdp = patchOpusSDP(offer.sdp);
     await callPc.setLocalDescription(offer);
+    console.log('[GRID WebRTC] Offer created, audio direction:',
+      offer.sdp.match(/a=(sendrecv|sendonly|recvonly|inactive)/)?.[1] || '?');
     wsSend({ type: 'call_offer', to: peerUsername, sdp: offer });
   }
 }
@@ -4485,20 +4474,20 @@ async function handleCallOffer(data) {
       try { await callPc.addIceCandidate(new RTCIceCandidate(c)); } catch(e) {}
     }
     callIceBuffer = [];
-    // КРИТИЧНО: явно ставим sendrecv ПЕРЕД createAnswer
-    // В Chromium 128+ (Electron 32), createAnswer({ offerToReceiveAudio: true }) — legacy опция
-    // может переключить transceiver в recvonly даже если треки добавлены!
-    // Это вызывает одностороннее аудио: callee слышит caller, но caller не слышит callee.
-    callPc.getTransceivers().forEach(tc => {
-      const prev = tc.direction;
-      if (tc.direction === 'recvonly' || tc.direction === 'inactive') {
-        tc.direction = 'sendrecv';
-        console.log('[GRID WebRTC] Answer: forced transceiver sendrecv, was:', prev);
-      }
-    });
-    const answer = await callPc.createAnswer(); // НЕ передаём offerToReceiveAudio — вызывает recvonly баг в Chromium!
+
+    // Логируем что пришло в offer — для диагностики
+    console.log('[GRID WebRTC] Remote offer audio direction:',
+      data.sdp.sdp?.match(/a=(sendrecv|sendonly|recvonly|inactive)/)?.[1] ||
+      (typeof data.sdp === 'string' ? data.sdp.match(/a=(sendrecv|sendonly|recvonly|inactive)/)?.[1] : '?'));
+
+    // createAnswer — НЕ трогаем transceiver.direction руками.
+    // После setRemoteDescription WebRTC сам правильно ставит направление
+    // на основе offer + наших треков добавленных через addTrack.
+    const answer = await callPc.createAnswer();
     answer.sdp = patchOpusSDP(answer.sdp);
     await callPc.setLocalDescription(answer);
+    console.log('[GRID WebRTC] Answer created, audio direction:',
+      answer.sdp.match(/a=(sendrecv|sendonly|recvonly|inactive)/)?.[1] || '?');
     wsSend({ type: 'call_answer', to: data.from, sdp: answer });
   } catch(e) { console.error('call_offer error', e); }
 }
