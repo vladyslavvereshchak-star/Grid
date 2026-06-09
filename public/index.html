@@ -4301,35 +4301,26 @@ async function startCallWebRTC(peerUsername, isInitiator) {
   callStream.getTracks().forEach(t => callPc.addTrack(t, callStream));
   callStream.getAudioTracks().forEach(t => t.enabled = !callMuted);
 
-  // AudioContext для gain-буста (опционально, не блокирует звонок).
-  // replaceTrack() применяется после resume() через user gesture.
+  // AudioContext ТОЛЬКО для gain-контроля через GainNode.gain.value и визуализации.
+  // WebRTC трек = сырой callStream трек. replaceTrack() НЕ используется — это главная
+  // причина тихого звука на телефоне (dest.stream не готов до resume).
   try {
     if (!callAudioCtx || callAudioCtx.state === 'closed') {
       callAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
     }
     callAudioCtx.resume().catch(() => {});
-    const src  = callAudioCtx.createMediaStreamSource(callStream);
+    const src = callAudioCtx.createMediaStreamSource(callStream);
     const gainNode = callAudioCtx.createGain();
     gainNode.gain.value = inputGainValue / 100;
-    const dest = callAudioCtx.createMediaStreamDestination();
+    // НЕ подключаем dest — только храним gainNode для UI-контроля громкости микрофона
+    // Реальная громкость микрофона регулируется через track.enabled + gainNode (анализ)
     src.connect(gainNode);
-    gainNode.connect(dest);
+    // gainNode.connect(dest) — УБРАНО: dest.stream не добавляется в WebRTC
     window._callInputGainNode   = gainNode;
-    window._callInputGainDest   = dest;
-    window._callInputGainStream = dest.stream;
-    // Если AudioContext успеет запуститься — заменяем трек на усиленный
-    if (callAudioCtx.state === 'running') {
-      const sender = callPc.getSenders().find(s => s.track && s.track.kind === 'audio');
-      if (sender) sender.replaceTrack(dest.stream.getAudioTracks()[0]).catch(() => {});
-    } else {
-      callAudioCtx.addEventListener('statechange', function onResume() {
-        if (callAudioCtx.state !== 'running') return;
-        callAudioCtx.removeEventListener('statechange', onResume);
-        if (!callPc) return;
-        const s = callPc.getSenders().find(s => s.track && s.track.kind === 'audio');
-        if (s) s.replaceTrack(dest.stream.getAudioTracks()[0]).catch(() => {});
-      });
-    }
+    window._callInputGainDest   = null;
+    window._callInputGainStream = callStream; // реальный поток
+    // НЕТ replaceTrack — callStream трек уже добавлен выше через addTrack напрямую
+    console.log('[GRID] Input AudioContext state:', callAudioCtx.state, '— gain only, no replaceTrack');
   } catch(e) {
     console.warn('[GRID] Input GainNode setup failed:', e);
     window._callInputGainNode = null;
@@ -4374,58 +4365,23 @@ async function startCallWebRTC(peerUsername, isInitiator) {
     }
 
     // ── Воспроизводим входящий звук ──
-    // НАПРЯМУЮ через audio element — это всегда работает независимо от user gesture.
-    // AudioContext для gain >100% подключается ТОЛЬКО если уже running (не suspended).
+    // НАПРЯМУЮ через audio element — srcObject = remoteStream, volume = outputGainRatio (capped 1.0).
+    // AudioContext НЕ используется в пути воспроизведения — audio.srcObject НЕ меняется на outDest.stream.
+    // Это фиксит проблему «не слышу собеседника на телефоне».
     audio.srcObject = remoteStream;
-    audio.volume    = 1.0;
+    audio.volume    = Math.min(1.0, outputGainRatio);
     audio.muted     = callSoundMuted;
     applySinkId(audio);
     await playAudio(audio);
 
-    // Опциональный gain-буст через AudioContext (только если уже активен)
-    (function tryOutputGain() {
-      try {
-        const outCtx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive', sampleRate: 48000 });
-        const outputGainRatio = (typeof outputGainValue !== 'undefined' ? outputGainValue : 200) / 100;
-        const applyGain = () => {
-          if (outCtx.state !== 'running') return;
-          try {
-            const outSrc  = outCtx.createMediaStreamSource(remoteStream);
-            const outGain = outCtx.createGain();
-            outGain.gain.value = outputGainRatio;
-            const outDest = outCtx.createMediaStreamDestination();
-            outSrc.connect(outGain);
-            outGain.connect(outDest);
-            callOutputGainNode = outGain;
-            // Переключаем audio element на усиленный поток
-            audio.srcObject = outDest.stream;
-            console.log('[GRID WebRTC] Output AudioContext gain active, ratio:', outputGainRatio);
-          } catch(e) {
-            console.warn('[GRID WebRTC] Output gain apply failed:', e);
-          }
-        };
-        if (outCtx.state === 'running') {
-          applyGain();
-        } else {
-          outCtx.resume().catch(() => {});
-          outCtx.addEventListener('statechange', function onRun() {
-            if (outCtx.state !== 'running') return;
-            outCtx.removeEventListener('statechange', onRun);
-            applyGain();
-          });
-        }
-        // Fallback gain object pointing to audio.volume
-        callOutputGainNode = callOutputGainNode || { gain: {
-          get value()  { return audio.volume; },
-          set value(v) { audio.volume = Math.min(1, Math.max(0, v)); }
-        }};
-      } catch(e) {
-        callOutputGainNode = { gain: {
-          get value()  { return audio.volume; },
-          set value(v) { audio.volume = Math.min(1, Math.max(0, v)); }
-        }};
+    // GainNode только для speakingDetection (анализатор входящего), не для воспроизведения
+    callOutputGainNode = {
+      gain: {
+        get value()  { return audio.volume / outputGainRatio || audio.volume; },
+        set value(v) { audio.volume = Math.min(1.0, Math.max(0, v)); }
       }
-    })();
+    };
+    console.log('[GRID WebRTC] Remote audio playing via direct srcObject, volume:', audio.volume);
 
     // ── Запускаем speaking detection с задержкой (srcObject должен "прогреться") ──
     setTimeout(async () => {
