@@ -4204,8 +4204,11 @@ function patchOpusSDP(sdp) {
       params['maxplaybackrate']   = '48000';  // 48kHz
       params['usedtx']            = '0';      // не резать в паузах
       params['useinbandfec']      = '1';      // защита от потерь
-      params['stereo']            = '1';      // стерео
-      params['sprop-stereo']      = '1';
+      params['stereo']            = '1';      // принимаем стерео от собеседника
+      // sprop-stereo=0: МЫ отправляем МОНО (не стерео!)
+      // sprop-stereo=1 с моно-микрофоном — известный Chrome/Electron баг:
+      // браузер пытается отправить стерео с моно источника и может отправить тишину
+      params['sprop-stereo']      = '0';
       // Убираем CBR — пусть Opus адаптируется
       delete params['cbr'];
 
@@ -4219,7 +4222,7 @@ function patchOpusSDP(sdp) {
     const idx = patched.findIndex(l => l.startsWith(`a=rtpmap:${pt} `));
     if (idx !== -1) {
       patched.splice(idx + 1, 0,
-        `a=fmtp:${pt} maxaveragebitrate=128000;maxplaybackrate=48000;usedtx=0;useinbandfec=1;stereo=1;sprop-stereo=1`
+        `a=fmtp:${pt} maxaveragebitrate=128000;maxplaybackrate=48000;usedtx=0;useinbandfec=1;stereo=1;sprop-stereo=0`
       );
     }
   }
@@ -4400,6 +4403,26 @@ async function startCallWebRTC(peerUsername, isInitiator) {
       const stLbl = document.getElementById('call-state-label');
       if (stLbl) stLbl.textContent = 'Connected · Audio live';
       applyHighBitrate(callPc);
+
+      // ── Safety net: проверяем что все transceivers sendrecv ──
+      // Если Chromium всё равно сбросил в recvonly — чиним через renegotiation
+      let needsRenegotiation = false;
+      callPc.getTransceivers().forEach(tc => {
+        if (tc.direction !== 'sendrecv') {
+          console.warn('[GRID WebRTC] Transceiver not sendrecv after connect! direction:', tc.direction, '→ fixing');
+          tc.direction = 'sendrecv';
+          needsRenegotiation = true;
+        }
+      });
+      if (needsRenegotiation && callPc.signalingState === 'stable') {
+        // Пересогласовываем SDP чтобы применить sendrecv
+        callPc.createOffer().then(offer => {
+          offer.sdp = patchOpusSDP(offer.sdp);
+          return callPc.setLocalDescription(offer);
+        }).then(() => {
+          wsSend({ type: 'call_offer', to: callPeer ? callPeer.username : '', sdp: callPc.localDescription });
+        }).catch(e => console.warn('[GRID WebRTC] Renegotiation failed:', e));
+      }
       const bar = document.getElementById('call-inline-bar');
       if (bar) bar.classList.add('connected');
       const lbl = document.getElementById('cbar-status-label');
@@ -4425,7 +4448,16 @@ async function startCallWebRTC(peerUsername, isInitiator) {
   };
 
   if (isInitiator) {
-    const offer = await callPc.createOffer({ offerToReceiveAudio: true });
+    // КРИТИЧНО: явно ставим sendrecv на всех transceivers ПЕРЕД createOffer
+    // В Unified Plan (Chromium 128+) addTrack создаёт transceiver sendrecv,
+    // но лучше явно подтвердить чтобы избежать Chrome багов с direction
+    callPc.getTransceivers().forEach(tc => {
+      if (tc.direction !== 'sendrecv') {
+        console.log('[GRID WebRTC] Forcing transceiver sendrecv, was:', tc.direction);
+        tc.direction = 'sendrecv';
+      }
+    });
+    const offer = await callPc.createOffer(); // НЕ передаём offerToReceiveAudio — legacy option Unified Plan игнорирует неправильно
     // Отключаем DTX (прерывистая передача) — он режет поток в паузах и даёт нарастающий эффект
     offer.sdp = patchOpusSDP(offer.sdp);
     await callPc.setLocalDescription(offer);
@@ -4453,7 +4485,18 @@ async function handleCallOffer(data) {
       try { await callPc.addIceCandidate(new RTCIceCandidate(c)); } catch(e) {}
     }
     callIceBuffer = [];
-    const answer = await callPc.createAnswer({ offerToReceiveAudio: true });
+    // КРИТИЧНО: явно ставим sendrecv ПЕРЕД createAnswer
+    // В Chromium 128+ (Electron 32), createAnswer({ offerToReceiveAudio: true }) — legacy опция
+    // может переключить transceiver в recvonly даже если треки добавлены!
+    // Это вызывает одностороннее аудио: callee слышит caller, но caller не слышит callee.
+    callPc.getTransceivers().forEach(tc => {
+      const prev = tc.direction;
+      if (tc.direction === 'recvonly' || tc.direction === 'inactive') {
+        tc.direction = 'sendrecv';
+        console.log('[GRID WebRTC] Answer: forced transceiver sendrecv, was:', prev);
+      }
+    });
+    const answer = await callPc.createAnswer(); // НЕ передаём offerToReceiveAudio — вызывает recvonly баг в Chromium!
     answer.sdp = patchOpusSDP(answer.sdp);
     await callPc.setLocalDescription(answer);
     wsSend({ type: 'call_answer', to: data.from, sdp: answer });
@@ -4531,7 +4574,11 @@ async function handlePeerJoined(data) {
 async function handleVoiceOffer(data) {
   const pc = createPeerConnection(data.from);
   await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-  const answer = await pc.createAnswer({ offerToReceiveAudio: true });
+  // Явно sendrecv перед answer — избегаем recvonly баг Chromium 128
+  pc.getTransceivers().forEach(tc => {
+    if (tc.direction === 'recvonly' || tc.direction === 'inactive') tc.direction = 'sendrecv';
+  });
+  const answer = await pc.createAnswer();
   answer.sdp = patchOpusSDP(answer.sdp);
   await pc.setLocalDescription(answer);
   ws.send(JSON.stringify({ type:'voice_answer', to: data.from, sdp: answer }));
