@@ -1061,6 +1061,8 @@ body.electron .app{height:calc(100vh - 32px)}
 .cbar-signal-bar:nth-child(3){ height:12px }
 .cbar-signal-bar:nth-child(4){ height:15px }
 #call-inline-bar.active .cbar-signal-bar{ opacity:1 }
+#cbar-voice-status:hover { background: rgba(0,229,255,0.05); border-radius: 6px; }
+#cbar-voice-status:hover #cbar-status-label { color: var(--accent); }
 #call-inline-bar.ringing .cbar-signal-bar:nth-child(3),
 #call-inline-bar.ringing .cbar-signal-bar:nth-child(4){ opacity:0.2 }
 
@@ -2208,8 +2210,8 @@ input[type=range]:focus{outline:none}
   
   <!-- ── DISCORD-STYLE CALL BAR — bottom of sub-panel ── -->
   <div id="call-inline-bar">
-    <!-- Voice connected status -->
-    <div id="cbar-voice-status">
+    <!-- Voice connected status — click → open DM chat with peer -->
+    <div id="cbar-voice-status" onclick="callBarGoToChat()" title="Open chat" style="cursor:pointer;flex:1;display:flex;align-items:center;gap:8px;min-width:0;padding:0 6px 0 0">
       <div id="cbar-voice-icon"><i class="ti ti-phone"></i></div>
       <div id="cbar-voice-info">
         <div id="cbar-status-label" class="cbar-status-label">CALLING</div>
@@ -3675,6 +3677,18 @@ function declineIncomingCall() {
 }
 
 // ── HANG UP (оба) ──
+// Клик по левой части плашки звонка → открыть DM чат с собеседником
+function callBarGoToChat() {
+  if (!callPeer) return;
+  const tag = callPeer.username;
+  if (friends[tag]) {
+    openDm(tag);
+  } else {
+    // Если пир есть но не в friends (edge-case) — просто переключаем вид
+    console.log('[GRID] callBarGoToChat: peer not in friends list:', tag);
+  }
+}
+
 function endCall(silent = false) {
   if (callRingTimeout)   { clearTimeout(callRingTimeout);   callRingTimeout = null; }
   if (callSoloTimeout)   { clearTimeout(callSoloTimeout);   callSoloTimeout = null; }
@@ -4294,40 +4308,105 @@ async function startCallWebRTC(peerUsername, isInitiator) {
     }
   }
 
-  // (AudioContext input gain setup is now below, after callPc creation)
+  // ── NOISE GATE — Web Audio пороговый гейт ─────────────────────────────────
+  // Работает как Discord "Noise Gate": пропускает звук только когда уровень > порога.
+  // Отрезает игровой шум, вентиляторы, фоновый гул, кулеры.
+  // AudioContext создаётся здесь — это вызывается из user gesture (Click Call / Accept),
+  // поэтому ctx.state сразу 'running', без проблемы autoplay policy.
+  let webrtcStream = callStream;
 
-  // ── Input chain ──
-  // ВАЖНО: callStream используется напрямую для addTrack — AudioContext НЕ в критическом пути.
-  // AudioContext suspended при создании без user gesture (для инициатора = WS колбэк),
-  // что делает dest.stream тихим. Решение: raw track → WebRTC, AudioContext → только анализ.
-  callPc = new RTCPeerConnection(ICE_CONFIG);
-  callStream.getTracks().forEach(t => callPc.addTrack(t, callStream));
-  callStream.getAudioTracks().forEach(t => t.enabled = !callMuted);
-
-  // AudioContext ТОЛЬКО для gain-контроля через GainNode.gain.value и визуализации.
-  // WebRTC трек = сырой callStream трек. replaceTrack() НЕ используется — это главная
-  // причина тихого звука на телефоне (dest.stream не готов до resume).
   try {
-    if (!callAudioCtx || callAudioCtx.state === 'closed') {
-      callAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const ngCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+    await ngCtx.resume();
+
+    const src  = ngCtx.createMediaStreamSource(callStream);
+
+    // HPF — режет гул ниже 80Гц (вентиляторы, бас)
+    const hpf  = ngCtx.createBiquadFilter();
+    hpf.type   = 'highpass';
+    hpf.frequency.value = 80;
+    hpf.Q.value = 0.7;
+
+    // Компрессор — выравнивает уровень голоса
+    const comp = ngCtx.createDynamicsCompressor();
+    comp.threshold.value = -24;
+    comp.knee.value      = 12;
+    comp.ratio.value     = 4;
+    comp.attack.value    = 0.003;
+    comp.release.value   = 0.15;
+
+    // Noise Gate gain node
+    const gateGain = ngCtx.createGain();
+    gateGain.gain.value = 0;
+
+    // Analyser для измерения RMS уровня
+    const analyser = ngCtx.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.15;
+    const ngBuf = new Float32Array(analyser.fftSize);
+
+    const dest = ngCtx.createMediaStreamDestination();
+    src.connect(hpf);
+    hpf.connect(comp);
+    comp.connect(analyser);
+    comp.connect(gateGain);
+    gateGain.connect(dest);
+
+    webrtcStream = dest.stream;
+
+    const getGateThresholdDb = () => parseFloat(localStorage.getItem('grid_noise_gate_db') || '-42');
+    let ngOpen = false;
+
+    window._callNoiseGateInterval = setInterval(() => {
+      if (ngCtx.state === 'closed') return;
+      analyser.getFloatTimeDomainData(ngBuf);
+      let sum = 0;
+      for (let i = 0; i < ngBuf.length; i++) sum += ngBuf[i] * ngBuf[i];
+      const rms = Math.sqrt(sum / ngBuf.length);
+      const db  = rms > 1e-6 ? 20 * Math.log10(rms) : -100;
+      const thr = getGateThresholdDb();
+
+      if (!ngOpen && db > thr) {
+        ngOpen = true;
+        gateGain.gain.setTargetAtTime(1, ngCtx.currentTime, 0.005);  // 5ms attack
+      } else if (ngOpen && db < thr - 4) {
+        ngOpen = false;
+        gateGain.gain.setTargetAtTime(0, ngCtx.currentTime, 0.18);   // 180ms release
+      }
+      window._callNoiseGateLevel = db;
+      window._callNoiseGateOpen  = ngOpen;
+    }, 20);
+
+    window._callNoiseGateCtx  = ngCtx;
+    callAudioCtx = ngCtx; // переиспользуем для speaking detection
+    window._callInputGainNode = gateGain;
+    console.log('[GRID NoiseGate] Ready — threshold:', getGateThresholdDb(), 'dBFS, ctx:', ngCtx.state);
+
+  } catch(ngErr) {
+    console.warn('[GRID NoiseGate] Failed, raw stream:', ngErr.message);
+    // Fallback: старый AudioContext только для анализа
+    try {
+      if (!callAudioCtx || callAudioCtx.state === 'closed')
+        callAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      callAudioCtx.resume().catch(() => {});
+      const src = callAudioCtx.createMediaStreamSource(callStream);
+      const gainNode = callAudioCtx.createGain();
+      gainNode.gain.value = inputGainValue / 100;
+      src.connect(gainNode);
+      window._callInputGainNode = gainNode;
+      console.log('[GRID] Fallback AudioContext state:', callAudioCtx.state);
+    } catch(e) {
+      console.warn('[GRID] Fallback AudioContext failed:', e);
+      window._callInputGainNode = null;
     }
-    callAudioCtx.resume().catch(() => {});
-    const src = callAudioCtx.createMediaStreamSource(callStream);
-    const gainNode = callAudioCtx.createGain();
-    gainNode.gain.value = inputGainValue / 100;
-    // НЕ подключаем dest — только храним gainNode для UI-контроля громкости микрофона
-    // Реальная громкость микрофона регулируется через track.enabled + gainNode (анализ)
-    src.connect(gainNode);
-    // gainNode.connect(dest) — УБРАНО: dest.stream не добавляется в WebRTC
-    window._callInputGainNode   = gainNode;
-    window._callInputGainDest   = null;
-    window._callInputGainStream = callStream; // реальный поток
-    // НЕТ replaceTrack — callStream трек уже добавлен выше через addTrack напрямую
-    console.log('[GRID] Input AudioContext state:', callAudioCtx.state, '— gain only, no replaceTrack');
-  } catch(e) {
-    console.warn('[GRID] Input GainNode setup failed:', e);
-    window._callInputGainNode = null;
   }
+
+  // ── WebRTC PeerConnection — используем обработанный поток ─────────────────
+  callPc = new RTCPeerConnection(ICE_CONFIG);
+  webrtcStream.getTracks().forEach(t => callPc.addTrack(t, webrtcStream));
+  // Mute применяем к обоим потокам на всякий случай
+  callStream.getAudioTracks().forEach(t => t.enabled = !callMuted);
+  webrtcStream.getAudioTracks().forEach(t => t.enabled = !callMuted);
 
   callPc.onicecandidate = (e) => {
     if (e.candidate) wsSend({ type: 'call_ice', to: peerUsername, candidate: e.candidate });
@@ -4404,20 +4483,25 @@ async function startCallWebRTC(peerUsername, isInitiator) {
       if (stLbl) stLbl.textContent = 'Connected · Audio live';
       applyHighBitrate(callPc);
 
-      // Диагностика — логируем реальные направления transceivers
-      callPc.getTransceivers().forEach((tc, i) => {
-        console.log(`[GRID WebRTC] Transceiver[${i}] direction: ${tc.direction}`,
-          '| sender track:', tc.sender.track?.label || 'none',
-          'enabled:', tc.sender.track?.enabled,
-          '| receiver track:', tc.receiver.track?.label || 'none');
+      // ── Safety net: проверяем что все transceivers sendrecv ──
+      // Если Chromium всё равно сбросил в recvonly — чиним через renegotiation
+      let needsRenegotiation = false;
+      callPc.getTransceivers().forEach(tc => {
+        if (tc.direction !== 'sendrecv') {
+          console.warn('[GRID WebRTC] Transceiver not sendrecv after connect! direction:', tc.direction, '→ fixing');
+          tc.direction = 'sendrecv';
+          needsRenegotiation = true;
+        }
       });
-      callPc.getSenders().forEach((s, i) => {
-        console.log(`[GRID WebRTC] Sender[${i}]:`, s.track?.label, 'enabled:', s.track?.enabled, 'readyState:', s.track?.readyState);
-      });
-
-      // НЕ делаем renegotiation после connect — это ломает одностороннее аудио.
-      // Transceivers уже правильно настроены в offer/answer exchange.
-
+      if (needsRenegotiation && callPc.signalingState === 'stable') {
+        // Пересогласовываем SDP чтобы применить sendrecv
+        callPc.createOffer().then(offer => {
+          offer.sdp = patchOpusSDP(offer.sdp);
+          return callPc.setLocalDescription(offer);
+        }).then(() => {
+          wsSend({ type: 'call_offer', to: callPeer ? callPeer.username : '', sdp: callPc.localDescription });
+        }).catch(e => console.warn('[GRID WebRTC] Renegotiation failed:', e));
+      }
       const bar = document.getElementById('call-inline-bar');
       if (bar) bar.classList.add('connected');
       const lbl = document.getElementById('cbar-status-label');
@@ -4425,16 +4509,16 @@ async function startCallWebRTC(peerUsername, isInitiator) {
       const stageStatus = document.getElementById('chat-call-status-label');
       if (stageStatus) stageStatus.textContent = 'IN CALL';
       markWidgetConnected();
-      if (typeof showConnectedUI === 'function') setTimeout(showConnectedUI, 200);
+
+      // ── Гарантированно показываем connected UI и запускаем detection ──
+      if (typeof showConnectedUI === 'function') {
+        setTimeout(showConnectedUI, 200);
+      }
     }
     if (state === 'failed') {
       const stLbl = document.getElementById('call-state-label');
-      if (stLbl) stLbl.textContent = 'Connection failed — retry';
-      console.error('[GRID WebRTC] Connection failed');
-      // ICE restart
-      if (callPc && isInitiator) {
-        callPc.restartIce();
-      }
+      if (stLbl) stLbl.textContent = 'Connection failed';
+      console.error('[GRID WebRTC] ICE/DTLS failed — check TURN servers');
     }
     if (state === 'disconnected') {
       const stLbl = document.getElementById('call-state-label');
@@ -4443,13 +4527,19 @@ async function startCallWebRTC(peerUsername, isInitiator) {
   };
 
   if (isInitiator) {
-    // addTrack уже создаёт transceiver с direction=sendrecv в Unified Plan.
-    // Не трогаем transceivers руками — createOffer сам берёт актуальные направления.
-    const offer = await callPc.createOffer();
+    // КРИТИЧНО: явно ставим sendrecv на всех transceivers ПЕРЕД createOffer
+    // В Unified Plan (Chromium 128+) addTrack создаёт transceiver sendrecv,
+    // но лучше явно подтвердить чтобы избежать Chrome багов с direction
+    callPc.getTransceivers().forEach(tc => {
+      if (tc.direction !== 'sendrecv') {
+        console.log('[GRID WebRTC] Forcing transceiver sendrecv, was:', tc.direction);
+        tc.direction = 'sendrecv';
+      }
+    });
+    const offer = await callPc.createOffer(); // НЕ передаём offerToReceiveAudio — legacy option Unified Plan игнорирует неправильно
+    // Отключаем DTX (прерывистая передача) — он режет поток в паузах и даёт нарастающий эффект
     offer.sdp = patchOpusSDP(offer.sdp);
     await callPc.setLocalDescription(offer);
-    console.log('[GRID WebRTC] Offer created, audio direction:',
-      offer.sdp.match(/a=(sendrecv|sendonly|recvonly|inactive)/)?.[1] || '?');
     wsSend({ type: 'call_offer', to: peerUsername, sdp: offer });
   }
 }
@@ -4474,20 +4564,20 @@ async function handleCallOffer(data) {
       try { await callPc.addIceCandidate(new RTCIceCandidate(c)); } catch(e) {}
     }
     callIceBuffer = [];
-
-    // Логируем что пришло в offer — для диагностики
-    console.log('[GRID WebRTC] Remote offer audio direction:',
-      data.sdp.sdp?.match(/a=(sendrecv|sendonly|recvonly|inactive)/)?.[1] ||
-      (typeof data.sdp === 'string' ? data.sdp.match(/a=(sendrecv|sendonly|recvonly|inactive)/)?.[1] : '?'));
-
-    // createAnswer — НЕ трогаем transceiver.direction руками.
-    // После setRemoteDescription WebRTC сам правильно ставит направление
-    // на основе offer + наших треков добавленных через addTrack.
-    const answer = await callPc.createAnswer();
+    // КРИТИЧНО: явно ставим sendrecv ПЕРЕД createAnswer
+    // В Chromium 128+ (Electron 32), createAnswer({ offerToReceiveAudio: true }) — legacy опция
+    // может переключить transceiver в recvonly даже если треки добавлены!
+    // Это вызывает одностороннее аудио: callee слышит caller, но caller не слышит callee.
+    callPc.getTransceivers().forEach(tc => {
+      const prev = tc.direction;
+      if (tc.direction === 'recvonly' || tc.direction === 'inactive') {
+        tc.direction = 'sendrecv';
+        console.log('[GRID WebRTC] Answer: forced transceiver sendrecv, was:', prev);
+      }
+    });
+    const answer = await callPc.createAnswer(); // НЕ передаём offerToReceiveAudio — вызывает recvonly баг в Chromium!
     answer.sdp = patchOpusSDP(answer.sdp);
     await callPc.setLocalDescription(answer);
-    console.log('[GRID WebRTC] Answer created, audio direction:',
-      answer.sdp.match(/a=(sendrecv|sendonly|recvonly|inactive)/)?.[1] || '?');
     wsSend({ type: 'call_answer', to: data.from, sdp: answer });
   } catch(e) { console.error('call_offer error', e); }
 }
@@ -4520,6 +4610,12 @@ function closeCallWebRTC() {
   if (callPc) { callPc.close(); callPc = null; }
   if (callStream) { callStream.getTracks().forEach(t => t.stop()); callStream = null; }
   if (callAudioCtx) { callAudioCtx.close().catch(()=>{}); callAudioCtx = null; }
+  // Очищаем noise gate
+  if (window._callNoiseGateInterval) { clearInterval(window._callNoiseGateInterval); window._callNoiseGateInterval = null; }
+  if (window._callNoiseGateCtx && window._callNoiseGateCtx !== callAudioCtx) {
+    window._callNoiseGateCtx.close().catch(()=>{});
+    window._callNoiseGateCtx = null;
+  }
   callIceBuffer = [];
   const audio = document.getElementById('call-remote-audio');
   if (audio) { audio.srcObject = null; audio.remove(); }
@@ -6394,8 +6490,16 @@ function toggleNoiseGate(el) {
 function updateNoiseGateThreshold(val) {
   noiseGateThreshold = parseInt(val);
   localStorage.setItem('grid_noisegate_threshold', noiseGateThreshold);
+  // Маппинг: 0% = -65 dBFS (почти выключен), 100% = -20 dBFS (очень агрессивный)
+  // Рекомендуемые: 15-25% ≈ -56…-51 dBFS — режет фон но не режет речь
+  const dbVal = -65 + (noiseGateThreshold / 100) * 45;
+  localStorage.setItem('grid_noise_gate_db', dbVal.toFixed(1));
   const el = document.getElementById('noisegate-val');
   if (el) el.textContent = noiseGateThreshold + '%';
+  // Обновляем live если звонок активен
+  if (window._callNoiseGateCtx && window._callNoiseGateCtx.state !== 'closed') {
+    console.log('[GRID NoiseGate] Threshold updated:', dbVal.toFixed(1), 'dBFS');
+  }
 }
 
 function updateInputGain(val) {
