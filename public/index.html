@@ -4291,34 +4291,67 @@ async function startCallWebRTC(peerUsername, isInitiator) {
     }
   }
 
-  // ── Input Gain Boost (поднимаем громкость исходящего микрофона) ──
-  // ВСЕГДА создаём GainNode (не только если != 100), чтобы можно было менять на лету
-  let streamToSend = callStream;
+  // (AudioContext input gain setup is now below, after callPc creation)
+
+  // ── Input chain ──
+  // ВАЖНО: callStream используется напрямую для addTrack — AudioContext НЕ в критическом пути.
+  // AudioContext suspended при создании без user gesture (для инициатора = WS колбэк),
+  // что делает dest.stream тихим. Решение: raw track → WebRTC, AudioContext → только анализ.
+  callPc = new RTCPeerConnection(ICE_CONFIG);
+  callStream.getTracks().forEach(t => callPc.addTrack(t, callStream));
+  callStream.getAudioTracks().forEach(t => t.enabled = !callMuted);
+
+  // AudioContext для gain-буста (опционально, не блокирует звонок).
+  // replaceTrack() применяется после resume() через user gesture.
   try {
     if (!callAudioCtx || callAudioCtx.state === 'closed') {
       callAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
     }
-    if (callAudioCtx.state === 'suspended') await callAudioCtx.resume();
-    const src = callAudioCtx.createMediaStreamSource(callStream);
+    callAudioCtx.resume().catch(() => {});
+    const src  = callAudioCtx.createMediaStreamSource(callStream);
     const gainNode = callAudioCtx.createGain();
     gainNode.gain.value = inputGainValue / 100;
     const dest = callAudioCtx.createMediaStreamDestination();
     src.connect(gainNode);
     gainNode.connect(dest);
-    streamToSend = dest.stream;
-    window._callInputGainNode = gainNode;
+    window._callInputGainNode   = gainNode;
+    window._callInputGainDest   = dest;
+    window._callInputGainStream = dest.stream;
+    // Если AudioContext успеет запуститься — заменяем трек на усиленный
+    if (callAudioCtx.state === 'running') {
+      const sender = callPc.getSenders().find(s => s.track && s.track.kind === 'audio');
+      if (sender) sender.replaceTrack(dest.stream.getAudioTracks()[0]).catch(() => {});
+    } else {
+      callAudioCtx.addEventListener('statechange', function onResume() {
+        if (callAudioCtx.state !== 'running') return;
+        callAudioCtx.removeEventListener('statechange', onResume);
+        if (!callPc) return;
+        const s = callPc.getSenders().find(s => s.track && s.track.kind === 'audio');
+        if (s) s.replaceTrack(dest.stream.getAudioTracks()[0]).catch(() => {});
+      });
+    }
   } catch(e) {
-    console.warn('Input GainNode failed, using raw stream:', e);
+    console.warn('[GRID] Input GainNode setup failed:', e);
     window._callInputGainNode = null;
   }
-
-  callPc = new RTCPeerConnection(ICE_CONFIG);
-  streamToSend.getTracks().forEach(t => callPc.addTrack(t, streamToSend));
-  callStream.getAudioTracks().forEach(t => t.enabled = !callMuted);
 
   callPc.onicecandidate = (e) => {
     if (e.candidate) wsSend({ type: 'call_ice', to: peerUsername, candidate: e.candidate });
   };
+
+  // ── Надёжное воспроизведение — fallback на любое взаимодействие ──
+  async function playAudio(audioEl) {
+    try {
+      await audioEl.play();
+      console.log('[GRID WebRTC] audio.play() OK');
+    } catch(err) {
+      console.warn('[GRID WebRTC] autoplay blocked:', err.name, '— waiting for interaction');
+      const retry = () => audioEl.play().catch(() => {});
+      document.addEventListener('pointerdown', retry, { once: true });
+      document.addEventListener('keydown',     retry, { once: true });
+      document.addEventListener('click',       retry, { once: true });
+    }
+  }
 
   callPc.ontrack = async (e) => {
     if (e.track.kind !== 'audio') return;
@@ -4340,64 +4373,59 @@ async function startCallWebRTC(peerUsername, isInitiator) {
       document.body.appendChild(audio);
     }
 
-    // Сохраняем RAW поток для speaking detection analyser
-    audio._rawStream = remoteStream;
+    // ── Воспроизводим входящий звук ──
+    // НАПРЯМУЮ через audio element — это всегда работает независимо от user gesture.
+    // AudioContext для gain >100% подключается ТОЛЬКО если уже running (не suspended).
+    audio.srcObject = remoteStream;
+    audio.volume    = 1.0;
+    audio.muted     = callSoundMuted;
+    applySinkId(audio);
+    await playAudio(audio);
 
-    // ── Функция воспроизведения — надёжная для Electron ──
-    // В Electron с autoplay-policy=no-user-gesture-required это всегда работает
-    // В браузере — требует gesture, поэтому вешаем несколько fallback
-    async function playAudio(audioEl) {
+    // Опциональный gain-буст через AudioContext (только если уже активен)
+    (function tryOutputGain() {
       try {
-        await audioEl.play();
-        console.log('[GRID WebRTC] audio.play() success');
-      } catch(err) {
-        console.warn('[GRID WebRTC] audio.play() blocked:', err.name, '— adding interaction fallback');
-        // Множественные fallback для всех случаев
-        const retry = () => { audioEl.play().catch(e => console.warn('[GRID] retry play failed:', e)); };
-        document.addEventListener('pointerdown', retry, { once: true });
-        document.addEventListener('keydown',     retry, { once: true });
-        document.addEventListener('click',       retry, { once: true });
+        const outCtx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive', sampleRate: 48000 });
+        const outputGainRatio = (typeof outputGainValue !== 'undefined' ? outputGainValue : 200) / 100;
+        const applyGain = () => {
+          if (outCtx.state !== 'running') return;
+          try {
+            const outSrc  = outCtx.createMediaStreamSource(remoteStream);
+            const outGain = outCtx.createGain();
+            outGain.gain.value = outputGainRatio;
+            const outDest = outCtx.createMediaStreamDestination();
+            outSrc.connect(outGain);
+            outGain.connect(outDest);
+            callOutputGainNode = outGain;
+            // Переключаем audio element на усиленный поток
+            audio.srcObject = outDest.stream;
+            console.log('[GRID WebRTC] Output AudioContext gain active, ratio:', outputGainRatio);
+          } catch(e) {
+            console.warn('[GRID WebRTC] Output gain apply failed:', e);
+          }
+        };
+        if (outCtx.state === 'running') {
+          applyGain();
+        } else {
+          outCtx.resume().catch(() => {});
+          outCtx.addEventListener('statechange', function onRun() {
+            if (outCtx.state !== 'running') return;
+            outCtx.removeEventListener('statechange', onRun);
+            applyGain();
+          });
+        }
+        // Fallback gain object pointing to audio.volume
+        callOutputGainNode = callOutputGainNode || { gain: {
+          get value()  { return audio.volume; },
+          set value(v) { audio.volume = Math.min(1, Math.max(0, v)); }
+        }};
+      } catch(e) {
+        callOutputGainNode = { gain: {
+          get value()  { return audio.volume; },
+          set value(v) { audio.volume = Math.min(1, Math.max(0, v)); }
+        }};
       }
-    }
-
-    // ── Пытаемся использовать AudioContext для gain >100% ──
-    try {
-      const outCtx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive', sampleRate: 48000 });
-
-      // КРИТИЧНО: resume() ДОЛЖЕН завершиться до createMediaStreamSource
-      // В Electron без autoplay-policy AudioContext стартует suspended
-      if (outCtx.state !== 'running') {
-        await outCtx.resume();
-        console.log('[GRID WebRTC] AudioContext resumed, state:', outCtx.state);
-      }
-
-      const outSrc  = outCtx.createMediaStreamSource(remoteStream);
-      const outGain = outCtx.createGain();
-      outGain.gain.value = outputGainRatio;
-      const outDest = outCtx.createMediaStreamDestination();
-      outSrc.connect(outGain);
-      outGain.connect(outDest);
-      callOutputGainNode = outGain;
-
-      audio.srcObject = outDest.stream;
-      audio.volume = 1;
-      audio.muted = callSoundMuted;
-      applySinkId(audio);
-      await playAudio(audio);
-
-    } catch(err) {
-      // Fallback: напрямую без AudioContext — всегда работает
-      console.warn('[GRID WebRTC] AudioContext failed, using direct srcObject:', err.message);
-      audio.srcObject = remoteStream;
-      audio.volume = Math.min(1, outputGainRatio); // Ограничено 100% без GainNode
-      audio.muted = callSoundMuted;
-      applySinkId(audio);
-      await playAudio(audio);
-      callOutputGainNode = { gain: {
-        get value()  { return audio.volume; },
-        set value(v) { audio.volume = Math.min(1, Math.max(0, v)); }
-      }};
-    }
+    })();
 
     // ── Запускаем speaking detection с задержкой (srcObject должен "прогреться") ──
     setTimeout(async () => {
