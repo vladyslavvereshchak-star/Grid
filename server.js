@@ -233,6 +233,10 @@ loadHistory();
 
 const voiceChannels = { 'голос-1': new Set(), 'голос-2': new Set() };
 
+// ── Group call rooms (DM group calls, up to 8 people) ──
+// roomId → { members: Set<username>, soloTimer: null|timeout }
+const groupCallRooms = new Map();
+
 // ── Heartbeat — Railway kills idle WS after ~30s without activity ──
 const HEARTBEAT_INTERVAL = 20000; // 20s ping
 setInterval(() => {
@@ -513,6 +517,103 @@ wss.on('connection', (ws, req) => {
         break;
       }
 
+      // ── GROUP CALL ──────────────────────────────────────────
+      case 'group_call_create': {
+        // Инициатор создаёт комнату и приглашает всех
+        const roomId = data.roomId;
+        const invitees = Array.isArray(data.invitees) ? data.invitees.slice(0, 7) : [];
+        if (!roomId) break;
+        const room = { members: new Set([user.username]), soloTimer: null };
+        groupCallRooms.set(roomId, room);
+        invitees.forEach(username => {
+          const tWs = findWsByUsername(username);
+          if (tWs) sendTo(tWs, {
+            type: 'group_call_invite',
+            roomId,
+            from: user.username,
+            fromColor: user.color,
+            fromAvatar: user.avatar || null,
+            invitees: [user.username, ...invitees]
+          });
+        });
+        break;
+      }
+
+      case 'group_call_accept': {
+        const roomId = data.roomId;
+        const room = groupCallRooms.get(roomId);
+        if (!room) break;
+        // Отменяем solo timer если он был
+        if (room.soloTimer) { clearTimeout(room.soloTimer); room.soloTimer = null; }
+        const wasAlone = room.members.size === 0;
+        room.members.add(user.username);
+        // Уведомляем всех участников в комнате что пришёл новый
+        room.members.forEach(memberName => {
+          if (memberName === user.username) return;
+          const mWs = findWsByUsername(memberName);
+          if (mWs) sendTo(mWs, {
+            type: 'group_call_peer_joined',
+            roomId,
+            username: user.username,
+            color: user.color,
+            avatar: user.avatar || null
+          });
+        });
+        // Новому участнику отдаём список текущих участников для WebRTC
+        const existingMembers = Array.from(room.members)
+          .filter(u => u !== user.username)
+          .map(u => {
+            const ud = Array.from(onlineUsers.values()).find(x => x.username === u);
+            return { username: u, color: ud ? ud.color : '#4af0c0', avatar: ud ? ud.avatar || null : null };
+          });
+        sendTo(ws, { type: 'group_call_joined', roomId, members: existingMembers });
+        break;
+      }
+
+      case 'group_call_decline': {
+        const roomId = data.roomId;
+        const targetWs = findWsByUsername(data.to);
+        if (targetWs) sendTo(targetWs, { type: 'group_call_decline', roomId, from: user.username });
+        break;
+      }
+
+      case 'group_call_leave': {
+        const roomId = data.roomId;
+        const room = groupCallRooms.get(roomId);
+        if (!room) break;
+        room.members.delete(user.username);
+        // Уведомляем оставшихся
+        room.members.forEach(memberName => {
+          const mWs = findWsByUsername(memberName);
+          if (mWs) sendTo(mWs, { type: 'group_call_peer_left', roomId, username: user.username });
+        });
+        // Если остался 1 человек — запускаем 30сек solo timer
+        if (room.members.size === 1) {
+          if (room.soloTimer) clearTimeout(room.soloTimer);
+          room.soloTimer = setTimeout(() => {
+            const lastMember = Array.from(room.members)[0];
+            if (lastMember) {
+              const lWs = findWsByUsername(lastMember);
+              if (lWs) sendTo(lWs, { type: 'group_call_solo_timeout', roomId });
+            }
+            groupCallRooms.delete(roomId);
+          }, 30000);
+        } else if (room.members.size === 0) {
+          if (room.soloTimer) clearTimeout(room.soloTimer);
+          groupCallRooms.delete(roomId);
+        }
+        break;
+      }
+
+      case 'group_call_offer':
+      case 'group_call_answer':
+      case 'group_call_ice': {
+        const targetWs = findWsByUsername(data.to);
+        if (targetWs) sendTo(targetWs, { ...data, from: user.username });
+        break;
+      }
+      // ── END GROUP CALL ──────────────────────────────────────
+
       case 'voice_join': {
         if (user.voiceChannel && voiceChannels[user.voiceChannel]) {
           voiceChannels[user.voiceChannel].delete(user.username);
@@ -601,6 +702,26 @@ wss.on('connection', (ws, req) => {
         });
         broadcastVoiceState();
       }
+      // Clean up group call rooms
+      groupCallRooms.forEach((room, roomId) => {
+        if (!room.members.has(user.username)) return;
+        room.members.delete(user.username);
+        room.members.forEach(memberName => {
+          const mWs = findWsByUsername(memberName);
+          if (mWs) sendTo(mWs, { type: 'group_call_peer_left', roomId, username: user.username });
+        });
+        if (room.members.size === 1) {
+          if (room.soloTimer) clearTimeout(room.soloTimer);
+          room.soloTimer = setTimeout(() => {
+            const last = Array.from(room.members)[0];
+            if (last) { const lWs = findWsByUsername(last); if (lWs) sendTo(lWs, { type: 'group_call_solo_timeout', roomId }); }
+            groupCallRooms.delete(roomId);
+          }, 30000);
+        } else if (room.members.size === 0) {
+          if (room.soloTimer) clearTimeout(room.soloTimer);
+          groupCallRooms.delete(roomId);
+        }
+      });
       broadcast({ type: 'system', text: `${user.username} вышел`, channel: 'общий' });
       broadcast({ type: 'user_left', username: user.username, users: getUserList() });
       onlineUsers.delete(ws);

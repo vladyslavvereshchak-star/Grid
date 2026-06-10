@@ -2227,13 +2227,16 @@ input[type=range]:focus{outline:none}
     </div>
     <!-- Controls row — Discord style -->
     <div id="cbar-voice-controls">
+      <div id="cbar-add-btn" class="cbar-icon-btn" onclick="openGroupCallModal()" title="Add to call" style="display:none">
+        <i class="ti ti-user-plus"></i>
+      </div>
       <div id="cbar-mute-btn" class="cbar-icon-btn" onclick="toggleCallMute()" title="Mute">
         <i class="ti ti-microphone" id="cbar-mute-icon"></i>
       </div>
       <div id="cbar-sound-btn" class="cbar-icon-btn" onclick="toggleCallSound()" title="Deafen">
         <i class="ti ti-volume" id="cbar-sound-icon"></i>
       </div>
-      <div class="cbar-icon-btn cbar-end" onclick="endCall()" title="Disconnect">
+      <div class="cbar-icon-btn cbar-end" onclick="endGroupCallOrCall()" title="Disconnect">
         <i class="ti ti-phone-off"></i>
       </div>
     </div>
@@ -2496,7 +2499,31 @@ input[type=range]:focus{outline:none}
   </div>
 </div>
 
-<!-- Legacy call-controls (hidden, kept for JS compat) -->
+<!-- GROUP CALL MODAL -->
+<div id="group-call-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:600;align-items:center;justify-content:center;backdrop-filter:blur(4px)">
+  <div style="background:var(--chrome-bg);border:1px solid var(--accent-border);border-top:var(--chrome-bevel);border-radius:14px;padding:24px;width:320px;max-width:94vw;box-shadow:0 40px 80px rgba(0,0,0,0.9)">
+    <div style="font-size:12px;font-weight:700;color:var(--accent);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:4px">ADD TO CALL</div>
+    <div style="font-size:10px;color:var(--text3);margin-bottom:16px;letter-spacing:0.04em">Select friends to invite (max 7 people total)</div>
+    <div id="gcm-friends-list" style="display:flex;flex-direction:column;gap:4px;max-height:260px;overflow-y:auto;margin-bottom:16px"></div>
+    <div style="display:flex;gap:8px">
+      <div onclick="confirmGroupCall()" style="flex:1;background:var(--accent-dim);border:1px solid var(--accent-border);border-top:var(--chrome-bevel);border-radius:8px;padding:9px;text-align:center;cursor:pointer;font-size:11px;font-weight:700;color:var(--accent);letter-spacing:0.07em;text-transform:uppercase;transition:all 0.25s" onmouseover="this.style.background='rgba(0,229,255,0.14)'" onmouseout="this.style.background='var(--accent-dim)'">Invite</div>
+      <div onclick="closeGroupCallModal()" style="background:var(--chrome);border:1px solid var(--border2);border-top:var(--chrome-bevel);border-radius:8px;padding:9px 16px;cursor:pointer;font-size:11px;color:var(--text3);transition:all 0.25s" onmouseover="this.style.borderColor='var(--accent-border)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--text3)'">Cancel</div>
+    </div>
+  </div>
+</div>
+
+<!-- GROUP INCOMING CALL OVERLAY -->
+<div id="group-incoming-overlay" style="display:none;position:fixed;bottom:20px;right:20px;z-index:600;width:300px">
+  <div style="background:var(--chrome-bg);border:1px solid var(--accent-border);border-top:var(--chrome-bevel);border-radius:12px;padding:14px;box-shadow:0 24px 60px rgba(0,0,0,0.9)">
+    <div style="font-size:9px;font-weight:700;color:var(--accent);letter-spacing:0.14em;text-transform:uppercase;margin-bottom:6px">⟶ GROUP CALL</div>
+    <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:2px" id="gcm-invite-from">—</div>
+    <div style="font-size:10px;color:var(--text3);margin-bottom:12px" id="gcm-invite-members">with 2 others</div>
+    <div style="display:flex;gap:8px">
+      <div onclick="acceptGroupCallInvite()" style="flex:1;background:var(--accent-dim);border:1px solid var(--accent-border);border-radius:7px;padding:8px;text-align:center;cursor:pointer;font-size:11px;font-weight:700;color:var(--accent);letter-spacing:0.06em;text-transform:uppercase">Join</div>
+      <div onclick="declineGroupCallInvite()" style="flex:1;background:var(--red-dim);border:1px solid var(--red-border);border-radius:7px;padding:8px;text-align:center;cursor:pointer;font-size:11px;font-weight:700;color:var(--red);letter-spacing:0.06em;text-transform:uppercase">Decline</div>
+    </div>
+  </div>
+</div>
 <div id="call-controls" style="display:none!important">
   <span class="call-timer" id="call-timer">00:00</span>
   <div id="call-mute-btn"><i class="ti ti-microphone" id="call-mute-icon"></i></div>
@@ -3457,7 +3484,17 @@ function handleMsg(data) {
         renderCallWidget(data);
       }
       break;
-}
+
+    // ── GROUP CALL SIGNALING ──
+    case 'group_call_invite':      handleGroupCallInvite(data);     break;
+    case 'group_call_joined':      handleGroupCallJoined(data);     break;
+    case 'group_call_peer_joined': handleGroupPeerJoined(data);     break;
+    case 'group_call_peer_left':   handleGroupPeerLeft(data);       break;
+    case 'group_call_decline':     break; // optionally show notif
+    case 'group_call_solo_timeout':handleGroupCallSoloTimeout(data);break;
+    case 'group_call_offer':       handleGroupCallOffer(data);      break;
+    case 'group_call_answer':      handleGroupCallAnswer(data);     break;
+    case 'group_call_ice':         handleGroupCallIce(data);        break;
 } // end handleMsg
 
 // ══════════════════════════════════════════════════════
@@ -3588,6 +3625,9 @@ async function handleCallAccepted(data) {
   if (callPeer) setCallCard('call-overlay', callPeer.username, callPeer.color, 'CONNECTED', 'Connected');
   startCallTimer();
   showNotif(`${data.from} joined the call`, 'blue');
+  // Show add-participants button
+  const addBtn = document.getElementById('cbar-add-btn');
+  if (addBtn) addBtn.style.display = 'flex';
   // Caller создаёт WebRTC — ждём полного поднятия перед отправкой offer
   await startCallWebRTC(data.from, true);
 }
@@ -3670,6 +3710,9 @@ function acceptIncomingCall() {
   // Сначала поднимаем WebRTC, только потом говорим caller-у что готовы
   startCallWebRTC(callPeer.username, false).then(() => {
     wsSend({ type: 'call_accept', to: callPeer ? callPeer.username : '' });
+    // Show add-participants button
+    const addBtn = document.getElementById('cbar-add-btn');
+    if (addBtn) addBtn.style.display = 'flex';
   });
 }
 
@@ -3772,6 +3815,8 @@ function endCallUI() {
 
   const btn = document.getElementById('call-btn');
   if (btn) { btn.classList.remove('in-call'); btn.innerHTML = '<i class="ti ti-phone"></i>'; }
+  const addBtn = document.getElementById('cbar-add-btn');
+  if (addBtn) addBtn.style.display = 'none';
 }
 
 // Update inline bar timer
@@ -4653,6 +4698,331 @@ function closeCallWebRTC() {
   callIceBuffer = [];
   const audio = document.getElementById('call-remote-audio');
   if (audio) { audio.srcObject = null; audio.remove(); }
+}
+
+  if (audio) { audio.srcObject = null; audio.remove(); }
+}
+
+// ══════════════════════════════════════════════════════
+//  GROUP CALL SYSTEM
+//  Flow:
+//   1. User is in a 1:1 call, clicks [+] → modal with friend list
+//   2. Selects friends → confirmGroupCall()
+//      → server: group_call_create (roomId, invitees)
+//      → current 1:1 call ends gracefully
+//      → both original parties + invitees get group_call_invite
+//   3. Each accepts → mesh WebRTC with all participants
+//   4. If only 1 person left → 30s solo timer → auto-end
+// ══════════════════════════════════════════════════════
+
+let gcRoomId        = null;   // current group call room ID
+let gcPeers         = {};     // { username → RTCPeerConnection }
+let gcAudio         = {};     // { username → HTMLAudioElement }
+let gcMembers       = [];     // [ {username, color} ] current members
+let gcPendingInvite = null;   // incoming invite data
+
+function generateRoomId() {
+  return 'gc_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+}
+
+// ── Open modal to add friends to call ──
+function openGroupCallModal() {
+  const modal = document.getElementById('group-call-modal');
+  const list  = document.getElementById('gcm-friends-list');
+  list.innerHTML = '';
+
+  const alreadyIn = new Set(gcMembers.map(m => m.username));
+  alreadyIn.add(me.name);
+  if (callPeer) alreadyIn.add(callPeer.username);
+
+  const onlineFriends = Object.values(friends).filter(f => f.online && !alreadyIn.has(f.username));
+  const totalInCall   = alreadyIn.size;
+
+  if (onlineFriends.length === 0) {
+    list.innerHTML = '<div style="font-size:11px;color:var(--text3);padding:8px 4px">No online friends to add</div>';
+  } else {
+    onlineFriends.slice(0, 8 - totalInCall).forEach(f => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:6px;cursor:pointer;border:1px solid transparent;transition:all 0.2s';
+      row.dataset.username = f.username;
+      row.dataset.selected = '0';
+      row.innerHTML = `
+        <div style="width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0;background:${colorToBg(f.color)};color:${f.color}">${f.username[0].toUpperCase()}</div>
+        <div style="flex:1;font-size:12px;color:var(--text)">${esc(f.username)}</div>
+        <div class="gcm-check" style="width:18px;height:18px;border-radius:4px;border:1.5px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--accent);transition:all 0.15s"></div>`;
+      row.onclick = () => {
+        const sel = row.dataset.selected === '1';
+        row.dataset.selected = sel ? '0' : '1';
+        row.style.background = sel ? '' : 'var(--accent-dim)';
+        row.style.borderColor = sel ? 'transparent' : 'var(--accent-border)';
+        row.querySelector('.gcm-check').textContent = sel ? '' : '✓';
+      };
+      list.appendChild(row);
+    });
+  }
+
+  modal.style.display = 'flex';
+}
+
+function closeGroupCallModal() {
+  document.getElementById('group-call-modal').style.display = 'none';
+}
+
+function confirmGroupCall() {
+  const selected = [...document.querySelectorAll('#gcm-friends-list [data-selected="1"]')]
+    .map(el => el.dataset.username);
+
+  if (selected.length === 0) { showNotif('Select at least one friend'); return; }
+
+  closeGroupCallModal();
+
+  const roomId = generateRoomId();
+  const currentPeer = callPeer ? callPeer.username : null;
+
+  // End the current 1:1 call gracefully
+  if (callActive && currentPeer) {
+    wsSend({ type: 'call_end', to: currentPeer });
+    closeCallWebRTC();
+    callActive = false; callSolo = false;
+    markWidgetEnded();
+    endCallUI();
+  }
+  if (callTimer) { clearInterval(callTimer); callTimer = null; }
+
+  const invitees = currentPeer ? [currentPeer, ...selected] : [...selected];
+  gcMembers = [{ username: me.name, color: me.color }];
+
+  // Tell server to create room and invite everyone
+  wsSend({ type: 'group_call_create', roomId, invitees });
+
+  // Enter group call UI
+  gcRoomId = roomId;
+  enterGroupCallUI();
+
+  // Accept our own room immediately (we're the creator)
+  wsSend({ type: 'group_call_accept', roomId });
+
+  showNotif(`Group call · inviting ${invitees.length} people`);
+  postGroupCallWidget(invitees);
+}
+
+function enterGroupCallUI() {
+  const bar = document.getElementById('call-inline-bar');
+  bar.classList.add('active');
+  bar.classList.add('connected');
+  const statusLabel = document.getElementById('cbar-status-label');
+  if (statusLabel) { statusLabel.textContent = 'GROUP CALL'; statusLabel.className = 'cbar-status-label connected'; }
+  const peerName = document.getElementById('cbar-peer-name');
+  if (peerName) peerName.textContent = gcMembers.length + ' participant' + (gcMembers.length !== 1 ? 's' : '');
+  const addBtn = document.getElementById('cbar-add-btn');
+  if (addBtn) addBtn.style.display = 'flex';
+  startCallTimer();
+  updateCallPanelPlacement();
+}
+
+function updateGroupCallBar() {
+  const count = gcMembers.length;
+  const peerName = document.getElementById('cbar-peer-name');
+  if (peerName) peerName.textContent = count + ' participant' + (count !== 1 ? 's' : '');
+}
+
+// ── INCOMING group call invite ──
+function handleGroupCallInvite(data) {
+  // If already in a group call, ignore
+  if (gcRoomId) return;
+  gcPendingInvite = data;
+  const overlay = document.getElementById('group-incoming-overlay');
+  document.getElementById('gcm-invite-from').textContent = data.from + ' · group call';
+  const others = (data.invitees || []).filter(u => u !== me.name && u !== data.from);
+  document.getElementById('gcm-invite-members').textContent =
+    others.length > 0 ? 'with ' + others.slice(0,3).join(', ') + (others.length > 3 ? '…' : '') : 'voice call';
+  overlay.style.display = 'block';
+  setTimeout(() => {
+    if (gcPendingInvite && gcPendingInvite.roomId === data.roomId) {
+      overlay.style.display = 'none';
+      gcPendingInvite = null;
+    }
+  }, 30000);
+}
+
+function acceptGroupCallInvite() {
+  if (!gcPendingInvite) return;
+  const roomId = gcPendingInvite.roomId;
+  document.getElementById('group-incoming-overlay').style.display = 'none';
+
+  // End any existing 1:1 call
+  if (callActive || callSolo) {
+    if (callPeer) wsSend({ type: 'call_end', to: callPeer.username });
+    closeCallWebRTC();
+    callActive = false; callSolo = false;
+    markWidgetEnded();
+    endCallUI();
+  }
+
+  gcRoomId = roomId;
+  gcMembers = [];
+
+  acquireGroupMic().then(() => {
+    wsSend({ type: 'group_call_accept', roomId });
+    enterGroupCallUI();
+  });
+
+  gcPendingInvite = null;
+}
+
+function declineGroupCallInvite() {
+  if (!gcPendingInvite) return;
+  wsSend({ type: 'group_call_decline', roomId: gcPendingInvite.roomId, to: gcPendingInvite.from });
+  document.getElementById('group-incoming-overlay').style.display = 'none';
+  gcPendingInvite = null;
+}
+
+// ── Server tells us we joined + who's already in ──
+async function handleGroupCallJoined(data) {
+  if (!data.members) return;
+  await acquireGroupMic();
+  for (const peer of data.members) {
+    if (!gcMembers.find(m => m.username === peer.username)) gcMembers.push(peer);
+    await createGroupPeer(peer.username, true);
+  }
+  updateGroupCallBar();
+}
+
+// ── A new peer joined the room ──
+async function handleGroupPeerJoined(data) {
+  if (!gcMembers.find(m => m.username === data.username))
+    gcMembers.push({ username: data.username, color: data.color });
+  await acquireGroupMic();
+  if (!gcPeers[data.username]) createGroupPeerSlot(data.username);
+  updateGroupCallBar();
+  showNotif(data.username + ' joined the group call', 'blue');
+}
+
+function handleGroupPeerLeft(data) {
+  gcMembers = gcMembers.filter(m => m.username !== data.username);
+  closeGroupPeer(data.username);
+  updateGroupCallBar();
+  showNotif(data.username + ' left the group call');
+}
+
+function handleGroupCallSoloTimeout(data) {
+  showNotif('Everyone left · call ended');
+  leaveGroupCall(true);
+}
+
+// ── WebRTC for group ──
+let gcLocalStream = null;
+
+async function acquireGroupMic() {
+  if (gcLocalStream) return;
+  try {
+    gcLocalStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false }, video: false
+    });
+  } catch(e) { showNotif('Microphone access denied'); }
+}
+
+function createGroupPeerSlot(username) {
+  if (gcPeers[username]) return gcPeers[username];
+  const pc = new RTCPeerConnection(ICE_CONFIG);
+  gcPeers[username] = pc;
+  if (gcLocalStream) gcLocalStream.getTracks().forEach(t => pc.addTrack(t, gcLocalStream));
+  pc.onicecandidate = e => {
+    if (e.candidate) wsSend({ type: 'group_call_ice', to: username, candidate: e.candidate, roomId: gcRoomId });
+  };
+  pc.ontrack = e => {
+    let audio = gcAudio[username];
+    if (!audio) {
+      audio = document.createElement('audio');
+      audio.autoplay = true;
+      audio.setAttribute('playsinline', '');
+      audio.style.display = 'none';
+      document.body.appendChild(audio);
+      gcAudio[username] = audio;
+    }
+    const stream = e.streams && e.streams[0] ? e.streams[0] : new MediaStream([e.track]);
+    audio.srcObject = stream;
+    audio.play().catch(() => {});
+    if (typeof applySinkId === 'function') applySinkId(audio);
+  };
+  pc.onconnectionstatechange = () => {
+    if (pc.connectionState === 'failed' || pc.connectionState === 'closed') closeGroupPeer(username);
+  };
+  return pc;
+}
+
+async function createGroupPeer(username, isInitiator) {
+  const pc = createGroupPeerSlot(username);
+  if (isInitiator) {
+    pc.getTransceivers().forEach(tc => { if (tc.direction !== 'sendrecv') tc.direction = 'sendrecv'; });
+    const offer = await pc.createOffer();
+    offer.sdp = patchOpusSDP(offer.sdp);
+    await pc.setLocalDescription(offer);
+    wsSend({ type: 'group_call_offer', to: username, sdp: offer, roomId: gcRoomId });
+  }
+}
+
+async function handleGroupCallOffer(data) {
+  await acquireGroupMic();
+  const pc = createGroupPeerSlot(data.from);
+  await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+  pc.getTransceivers().forEach(tc => { if (tc.direction === 'recvonly' || tc.direction === 'inactive') tc.direction = 'sendrecv'; });
+  const answer = await pc.createAnswer();
+  answer.sdp = patchOpusSDP(answer.sdp);
+  await pc.setLocalDescription(answer);
+  wsSend({ type: 'group_call_answer', to: data.from, sdp: answer, roomId: gcRoomId });
+}
+
+async function handleGroupCallAnswer(data) {
+  const pc = gcPeers[data.from];
+  if (pc) await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+}
+
+async function handleGroupCallIce(data) {
+  const pc = gcPeers[data.from];
+  if (pc && data.candidate) {
+    try { await pc.addIceCandidate(new RTCIceCandidate(data.candidate)); } catch(e) {}
+  }
+}
+
+function closeGroupPeer(username) {
+  if (gcPeers[username]) { gcPeers[username].close(); delete gcPeers[username]; }
+  if (gcAudio[username]) { gcAudio[username].srcObject = null; gcAudio[username].remove(); delete gcAudio[username]; }
+}
+
+function leaveGroupCall(silent) {
+  if (gcRoomId) wsSend({ type: 'group_call_leave', roomId: gcRoomId });
+  gcRoomId = null;
+  gcMembers = [];
+  Object.keys(gcPeers).forEach(u => closeGroupPeer(u));
+  gcPeers = {};
+  if (gcLocalStream) { gcLocalStream.getTracks().forEach(t => t.stop()); gcLocalStream = null; }
+  const addBtn = document.getElementById('cbar-add-btn');
+  if (addBtn) addBtn.style.display = 'none';
+  endCallUI();
+  if (!silent) showNotif('Left group call');
+}
+
+// Unified end — ends group OR 1:1 call
+function endGroupCallOrCall() {
+  if (gcRoomId) { leaveGroupCall(); } else { endCall(); }
+}
+
+function postGroupCallWidget(invitees) {
+  const msgs = document.getElementById('messages');
+  if (!msgs) return;
+  const widget = document.createElement('div');
+  widget.className = 'chat-call-widget';
+  widget.innerHTML = `
+    <div class="widget-main-row">
+      <div class="widget-icon-col"><div class="widget-phone-ico"><i class="ti ti-users"></i></div></div>
+      <div class="widget-text">
+        <div class="widget-title">${esc(me.name)} started a group call</div>
+        <div class="widget-sub"><span class="widget-dot"></span><span>Inviting ${invitees.length} people</span></div>
+      </div>
+    </div>`;
+  msgs.appendChild(widget);
+  scrollBottom();
 }
 
 // ══════════════════════════════
