@@ -56,76 +56,91 @@ body{
   display:flex;align-items:center;justify-content:center
 }
 
-/* ══════════════════════════════════
-   GLASS MODE  (body.glass)
-══════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════
+   GLASS MODE — читаемость текста и стеклянные панели
+═══════════════════════════════════════════════════════ */
 
-/* Glass mode shifts BG slightly so panels read as frosted glass over it */
 body.glass { background: #030405; }
 
-/* Glass variables — overridden per slider value via JS */
 body.glass {
-  --glass-blur: 18px;
-  --glass-bg: rgba(10,12,16,0.55);
-  --glass-bg-dark: rgba(6,8,10,0.65);
-  --glass-border: rgba(0,229,255,0.10);
-  --glass-bevel: rgba(255,255,255,0.07);
+  --glass-blur:    18px;
+  --glass-bg:      rgba(8,10,14,0.62);
+  --glass-bg-dark: rgba(5,7,10,0.74);
+  --glass-border:  rgba(0,229,255,0.10);
+  --glass-bevel:   rgba(255,255,255,0.06);
+  --text:  #e0e6ec;
+  --text2: #8fa0af;
+  --text3: #546070;
 }
-
-/* Dock */
 body.glass .grid-dock {
   background: var(--glass-bg-dark);
   backdrop-filter: blur(var(--glass-blur)) saturate(1.5);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.5);
   border-right: 1px solid var(--glass-border);
 }
-
-/* Left sub panel */
 body.glass .grid-sub-panel {
   background: var(--glass-bg);
   backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
   border-right: 1px solid var(--glass-border);
 }
-
-/* Chat panel */
-body.glass .panel-chat {
-  background: transparent;
+body.glass .dm-entry, body.glass .sub-user-item,
+body.glass .vc-item, body.glass .ch-item {
+  background: rgba(255,255,255,0.03); border-radius: 6px;
 }
+body.glass .dm-entry:hover, body.glass .sub-user-item:hover,
+body.glass .ch-item:hover { background: rgba(0,229,255,0.07); }
+body.glass .dm-entry.active, body.glass .ch-item.active {
+  background: rgba(0,229,255,0.10); border: 1px solid rgba(0,229,255,0.15);
+}
+body.glass .panel-chat    { background: transparent; }
+body.glass .chat-messages { background: transparent; }
 body.glass .chat-header {
   background: var(--glass-bg-dark);
   backdrop-filter: blur(var(--glass-blur));
   -webkit-backdrop-filter: blur(var(--glass-blur));
   border-bottom: 1px solid var(--glass-border);
 }
-body.glass .chat-input-area {
-  background: var(--glass-bg-dark);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
-  border-top: 1px solid var(--glass-border);
-}
 body.glass #chat-call-stage {
-  background: var(--glass-bg);
+  background: rgba(6,9,14,0.60);
   backdrop-filter: blur(var(--glass-blur));
   -webkit-backdrop-filter: blur(var(--glass-blur));
 }
-/* Messages area — keep transparent so lava shows through */
-body.glass .chat-messages {
-  background: transparent;
-}
-/* Message bubbles — slight glass tint */
 body.glass .msg-text {
-  background: rgba(255,255,255,0.025);
-  border: 1px solid rgba(255,255,255,0.04);
-  border-radius: 6px;
-  padding: 4px 8px;
+  background: rgba(6,9,14,0.72);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-top: 1px solid rgba(255,255,255,0.11);
+  border-radius: 7px; padding: 5px 10px;
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  color: #d8e2ea;
+  box-shadow: 0 2px 14px rgba(0,0,0,0.40);
 }
 body.glass .msg-text.own {
-  background: rgba(0,229,255,0.04);
-  border-color: rgba(0,229,255,0.09);
+  background: rgba(0,229,255,0.09);
+  border-color: rgba(0,229,255,0.15);
+  border-top-color: rgba(0,229,255,0.22);
+  color: rgba(195,245,255,0.93);
 }
-
-/* Right profile panel */
+body.glass .msg-name  { text-shadow: 0 1px 5px rgba(0,0,0,0.9); }
+body.glass .msg-time  { color: rgba(120,148,168,0.85) !important; }
+body.glass .msg-system-text {
+  background: rgba(5,7,11,0.65); border: 1px solid rgba(255,255,255,0.05);
+  color: rgba(130,155,172,0.80);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+body.glass .chat-input-area {
+  background: var(--glass-bg-dark);
+  backdrop-filter: blur(var(--glass-blur)); -webkit-backdrop-filter: blur(var(--glass-blur));
+  border-top: 1px solid var(--glass-border);
+}
+body.glass .input-row {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-top: 1px solid rgba(255,255,255,0.11);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+body.glass .chat-input { color: #d8e2ea; }
+body.glass .chat-input::placeholder { color: rgba(110,138,158,0.55); }
 body.glass .panel-profile {
   background: var(--glass-bg);
   backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
@@ -133,37 +148,56 @@ body.glass .panel-profile {
   border-left: 1px solid var(--glass-border);
 }
 body.glass .profile-banner {
-  background: linear-gradient(135deg, rgba(0,229,255,0.07), rgba(123,97,255,0.04) 70%);
+  background: linear-gradient(135deg,rgba(0,229,255,0.07),rgba(0,180,210,0.03) 70%);
 }
-
-/* Modal */
-body.glass .modal {
+body.glass .friend-card { background: rgba(255,255,255,0.03); border-radius: 6px; }
+body.glass .friend-card:hover { background: rgba(0,229,255,0.06); }
+body.glass #call-inline-bar {
   background: var(--glass-bg-dark);
-  backdrop-filter: blur(32px) saturate(1.6);
-  -webkit-backdrop-filter: blur(32px) saturate(1.6);
+  backdrop-filter: blur(var(--glass-blur)); -webkit-backdrop-filter: blur(var(--glass-blur));
+  border-top: 1px solid var(--glass-border);
+}
+body.glass .modal {
+  background: rgba(5,7,11,0.82);
+  backdrop-filter: blur(32px) saturate(1.6); -webkit-backdrop-filter: blur(32px) saturate(1.6);
   border: 1px solid var(--glass-border);
 }
-
-/* App background gets the lava canvas */
-body.glass #app-lava-canvas {
-  display: block;
+body.glass .modal-nav { background: rgba(4,5,9,0.72); border-right: 1px solid rgba(255,255,255,0.05); }
+body.glass .field, body.glass .login-input, body.glass .sub-search {
+  background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); color: #d8e2ea;
 }
+body.glass .field:focus, body.glass .login-input:focus {
+  border-color: rgba(0,229,255,0.28); background: rgba(0,229,255,0.04);
+}
+body.glass .u-btn, body.glass .sub-add-btn, body.glass .call-btn {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08); border-top: 1px solid rgba(255,255,255,0.13);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+body.glass .u-btn:hover, body.glass .sub-add-btn:hover {
+  background: rgba(0,229,255,0.10); border-color: rgba(0,229,255,0.20);
+}
+body.glass .notif-toast {
+  background: rgba(6,9,14,0.86);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255,255,255,0.07); border-top: 1px solid rgba(255,255,255,0.12);
+}
+body.glass #emoji-picker {
+  background: rgba(6,9,14,0.90);
+  backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255,255,255,0.07);
+}
+body.glass .ctx-menu, body.glass #call-ctx-menu {
+  background: rgba(5,8,12,0.92);
+  backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255,255,255,0.08); border-top: 1px solid rgba(255,255,255,0.13);
+}
+body.glass #app-lava-canvas { display: block; }
 #app-lava-canvas {
-  display: none;
-  position: fixed;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: 0;
+  display: none; position: fixed; inset: 0;
+  width: 100%; height: 100%; pointer-events: none; z-index: 0;
 }
-body.glass .app {
-  position: relative;
-  z-index: 1;
-  background: transparent;
-}
-
-
+body.glass .app { position: relative; z-index: 1; background: transparent; }
 /* Global text selection color */
 ::selection{background:rgba(0,229,255,0.2);color:var(--text)}
 
@@ -3495,6 +3529,7 @@ function handleMsg(data) {
     case 'group_call_offer':       handleGroupCallOffer(data);      break;
     case 'group_call_answer':      handleGroupCallAnswer(data);     break;
     case 'group_call_ice':         handleGroupCallIce(data);        break;
+  } // end switch
 } // end handleMsg
 
 // ══════════════════════════════════════════════════════
@@ -4710,9 +4745,6 @@ function closeCallWebRTC() {
   callAudioCtx = null;
   callIceBuffer = [];
   const audio = document.getElementById('call-remote-audio');
-  if (audio) { audio.srcObject = null; audio.remove(); }
-}
-
   if (audio) { audio.srcObject = null; audio.remove(); }
 }
 
