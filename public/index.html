@@ -3332,10 +3332,19 @@ function connect(token) {
   ws.onclose = () => {
     setConnBadge('offline');
     if (callActive || callSolo) {
-      callActive = false; callSolo = false; callPeer = null;
-      closeCallWebRTC();
-      markWidgetEnded();
-      endCallUI();
+      // Delay endCallUI — WS may reconnect quickly (Railway keep-alive, network blip).
+      // WebRTC is peer-to-peer and survives WS drops, so don't kill the UI immediately.
+      const snapActive = callActive, snapSolo = callSolo;
+      setTimeout(() => {
+        // Only tear down if still disconnected (ws is null or not OPEN) AND still in call state
+        const wsGone = !ws || ws.readyState !== WebSocket.OPEN;
+        if (wsGone && (callActive || callSolo)) {
+          callActive = false; callSolo = false; callPeer = null;
+          closeCallWebRTC();
+          markWidgetEnded();
+          endCallUI();
+        }
+      }, 5000); // 5s grace — enough for Railway to reconnect
     }
     const t2 = localStorage.getItem('grid_token');
     if (!t2) return;
@@ -6044,10 +6053,11 @@ document.getElementById('username-input').focus();
 // ══════════════════════════════════════════════════════
 
 // Per-peer state
-const callPeerGain   = {};   // username → GainNode
 const callPeerMuted  = {};   // username → bool
 const callPeerVol    = {};   // username → 0-200
-const callPeerAudioCtx = {}; // username → AudioContext
+// Legacy stubs — no longer used but kept for compat with any remaining references
+const callPeerGain   = {};
+const callPeerAudioCtx = {};
 
 // Speaking detection animation frames
 let speakAnimMe   = null;
@@ -6312,22 +6322,10 @@ function onCtxVolume(val) {
 
 function applyPeerGain(username, volumePct) {
   const audio = document.getElementById('call-remote-audio');
-  if (!audio || !audio.srcObject) return;
-  try {
-    if (!callPeerAudioCtx[username]) {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const src = ctx.createMediaStreamSource(audio.srcObject);
-      const gain = ctx.createGain();
-      src.connect(gain);
-      gain.connect(ctx.destination);
-      callPeerAudioCtx[username] = ctx;
-      callPeerGain[username] = gain;
-      // Mute original audio element to avoid double playback
-      audio.muted = true;
-    }
-    const gain = callPeerGain[username];
-    if (gain) gain.gain.value = volumePct / 100;
-  } catch(e) { console.warn('Gain node error:', e); }
+  if (!audio) return;
+  // Direct volume control — no AudioContext needed, avoids audio.muted=true silencing bug
+  audio.volume = Math.min(1.0, Math.max(0, volumePct / 100));
+  callPeerVol[username] = volumePct;
 }
 
 function onCtxMute() {
@@ -6336,13 +6334,9 @@ function onCtxMute() {
   callPeerMuted[name] = !callPeerMuted[name];
   const isMuted = callPeerMuted[name];
   document.getElementById('ctx-mute-label').textContent = isMuted ? '[ UNMUTE ]' : '[ MUTE ]';
-  // Apply mute via gain
-  if (callPeerGain[name]) {
-    callPeerGain[name].gain.value = isMuted ? 0 : (callPeerVol[name] ?? 100) / 100;
-  } else {
-    const audio = document.getElementById('call-remote-audio');
-    if (audio) audio.muted = isMuted;
-  }
+  // Direct mute on audio element
+  const audio = document.getElementById('call-remote-audio');
+  if (audio) audio.muted = isMuted;
   closeCtxMenu();
 }
 
@@ -6410,14 +6404,12 @@ const _origEndCallUI = endCallUI;
 window.endCallUI = function() {
   _origEndCallUI();
   hideConnectedUI();
-  // Clean up gain nodes
-  for (const ctx of Object.values(callPeerAudioCtx)) {
-    try { ctx.close(); } catch(e) {}
-  }
-  for (const k in callPeerAudioCtx) delete callPeerAudioCtx[k];
-  for (const k in callPeerGain) delete callPeerGain[k];
+  // Reset per-peer state
   for (const k in callPeerMuted) delete callPeerMuted[k];
-  for (const k in callPeerVol) delete callPeerVol[k];
+  for (const k in callPeerVol)   delete callPeerVol[k];
+  // Unmute remote audio in case it was muted by onCtxMute
+  const audio = document.getElementById('call-remote-audio');
+  if (audio) { audio.muted = false; }
 };
 
 // ── startCallWebRTC wrapped — speaking detection запускается в самом ontrack ──
