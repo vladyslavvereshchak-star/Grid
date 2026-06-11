@@ -3538,6 +3538,8 @@ let callCooldownUntil = 0;
 // ── CALLER: initiate ──
 function startCall() {
   if (!dmMode || !dmWith) return;
+  // If in group call — leave it first, then start 1:1
+  if (gcRoomId) { leaveGroupCall(true); }
   if (callActive || callSolo) { endCall(); return; }
   // Cooldown — 3s after last call ended to prevent spam
   if (Date.now() < callCooldownUntil) {
@@ -3601,11 +3603,11 @@ function enterSoloMode(label) {
     }
     callActive = false; callSolo = false;
     callPeer = null;
+    callCooldownUntil = Date.now() + 3000;
     closeCallWebRTC();
     markWidgetEnded();
-    endCallUI();
+    if (typeof window.endCallUI === 'function') window.endCallUI(); else endCallUI();
     showNotif('Call ended · No one joined');
-    // Сообщение в чат
     addSystemMsg('📵 No one joined the call');
   }, 30 * 1000);
 }
@@ -3653,12 +3655,18 @@ function handleCallEnded(data) {
   callSeconds = 0; callPeer = null;
   closeCallWebRTC();
   markWidgetEnded();  // показываем ENDED в чате у обоих
-  endCallUI();
+  if (typeof window.endCallUI === 'function') window.endCallUI(); else endCallUI();
   if (name) showNotif(`${name} ended the call`);
 }
 
 // ── CALLEE: receive incoming ──
 function handleCallInvite(data) {
+  // If already in a 1:1 call or group call — send busy signal back
+  if (callActive || callSolo || gcRoomId) {
+    wsSend({ type: 'call_decline', to: data.from });
+    return;
+  }
+
   // Show incoming overlay with timeout bar
   const color = data.fromColor || '#00E5FF';
   setCallCard('incoming-call-overlay', data.from, color, null, null);
@@ -3751,7 +3759,7 @@ function endCall(silent = false) {
 
   closeCallWebRTC();
   markWidgetEnded();
-  endCallUI();
+  if (typeof window.endCallUI === 'function') window.endCallUI(); else endCallUI();
 
   if (!silent && wasActive) showNotif('Call ended');
 }
@@ -4785,7 +4793,8 @@ function confirmGroupCall() {
     closeCallWebRTC();
     callActive = false; callSolo = false;
     markWidgetEnded();
-    endCallUI();
+    if (typeof window.endCallUI === 'function') window.endCallUI();
+    else endCallUI();
   }
   if (callTimer) { clearInterval(callTimer); callTimer = null; }
 
