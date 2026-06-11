@@ -3537,7 +3537,8 @@ let callCooldownUntil = 0;
 
 // ── CALLER: initiate ──
 function startCall() {
-  if (!dmMode || !dmWith) return;
+  console.log('[CALL] startCall() → dmMode:', dmMode, 'dmWith:', dmWith, 'callActive:', callActive, 'callSolo:', callSolo, 'gcRoomId:', gcRoomId, 'cooldown:', Date.now() < callCooldownUntil);
+  if (!dmMode || !dmWith) { console.warn('[CALL] abort: no dmMode/dmWith'); return; }
   // If in group call — leave it first, then start 1:1
   if (gcRoomId) { leaveGroupCall(true); }
   if (callActive || callSolo) { endCall(); return; }
@@ -3546,6 +3547,7 @@ function startCall() {
     showNotif('Please wait before calling again…');
     return;
   }
+  console.log('[CALL] sending call_invite to', dmWith.username);
 
   callPeer = { username: dmWith.username, color: dmWith.color || me.color };
   callSolo = false;
@@ -3614,6 +3616,7 @@ function enterSoloMode(label) {
 
 // ── CALLER: peer accepted ──
 async function handleCallAccepted(data) {
+  console.log('[CALL] handleCallAccepted from:', data.from, '| callPeer:', callPeer);
   if (callRingTimeout) { clearTimeout(callRingTimeout); callRingTimeout = null; }
   if (callSoloTimeout) { clearTimeout(callSoloTimeout); callSoloTimeout = null; }
   callSolo = false;
@@ -3661,8 +3664,10 @@ function handleCallEnded(data) {
 
 // ── CALLEE: receive incoming ──
 function handleCallInvite(data) {
+  console.log('[CALL] handleCallInvite from:', data.from, '| callActive:', callActive, 'callSolo:', callSolo, 'gcRoomId:', gcRoomId);
   // If already in a 1:1 call or group call — send busy signal back
   if (callActive || callSolo || gcRoomId) {
+    console.warn('[CALL] busy — auto-declining from', data.from);
     wsSend({ type: 'call_decline', to: data.from });
     return;
   }
@@ -4324,7 +4329,7 @@ async function applyHighBitrate(pc) {
 }
 
 async function startCallWebRTC(peerUsername, isInitiator) {
-  closeCallWebRTC(); // чистим старое если есть
+  console.log('[WEBRTC] startCallWebRTC → peer:', peerUsername, 'initiator:', isInitiator);
 
   // Получаем поток — echo cancellation должно работать нативно в браузере
   // ВАЖНО: НЕ пропускаем через Web Audio API (createMediaStreamSource→dest)
