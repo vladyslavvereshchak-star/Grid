@@ -23,6 +23,51 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json({ limit: '70mb' }));
 
 const JWT_SECRET = process.env.JWT_SECRET || 'grid-secret-key-change-in-prod';
+if (!process.env.JWT_SECRET) console.warn('⚠️  JWT_SECRET not set in env!');
+
+// ══════════════════════════════════════════════════════════════
+//  ADMIN CONFIG — set ADMIN_USERNAME in Railway Variables
+// ══════════════════════════════════════════════════════════════
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'po1son';
+
+// ── Security Headers ──────────────────────────────────────────
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  if (process.env.NODE_ENV === 'production') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  next();
+});
+
+// ── Rate Limiter ──────────────────────────────────────────────
+class RateLimiter {
+  constructor(windowMs, maxRequests) {
+    this.windowMs = windowMs; this.maxRequests = maxRequests; this.store = new Map();
+    setInterval(() => { const now = Date.now(); for (const [k, d] of this.store) if (now - d.windowStart > this.windowMs * 2) this.store.delete(k); }, 5 * 60 * 1000);
+  }
+  check(ip) {
+    const now = Date.now(); let d = this.store.get(ip);
+    if (!d || now - d.windowStart > this.windowMs) d = { windowStart: now, count: 0 };
+    d.count++; this.store.set(ip, d); return d.count <= this.maxRequests;
+  }
+  middleware() {
+    return (req, res, next) => {
+      const ip = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress || 'unknown';
+      if (!this.check(ip)) return res.status(429).json({ error: 'Слишком много запросов. Подожди немного.' });
+      next();
+    };
+  }
+}
+const authLimiter    = new RateLimiter(15 * 60 * 1000, 10);
+const profileLimiter = new RateLimiter(10 * 60 * 1000, 20);
+
+function sanitizeText(text) {
+  if (typeof text !== 'string') return '';
+  return text.replace(/\0/g, '').replace(/[\x01-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+}
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -79,7 +124,7 @@ async function initDB() {
 
 initDB().catch(console.error);
 
-app.post('/api/register', async (req, res) => {
+app.post('/api/register', authLimiter.middleware(), async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Введи логин и пароль' });
   if (username.length < 3) return res.status(400).json({ error: 'Логин минимум 3 символа' });
@@ -103,17 +148,18 @@ app.post('/api/register', async (req, res) => {
   }
 });
 
-app.post('/api/login', async (req, res) => {
+app.post('/api/login', authLimiter.middleware(), async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Введи логин и пароль' });
 
   try {
     const result = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
-    if (result.rows.length === 0) return res.status(401).json({ error: 'Неверный логин или пароль' });
-    const user = result.rows[0];
-    const ok = await bcrypt.compare(password, user.password_hash);
-    if (!ok) return res.status(401).json({ error: 'Неверный логин или пароль' });
-    const token = jwt.sign({ id: user.id, username: user.username, color: user.color }, JWT_SECRET);
+    // Always run bcrypt even if user not found — prevents timing attacks
+    const fakeHash = '$2a$10$invalidhashfortimingXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
+    const user = result.rows[0] || null;
+    const ok = await bcrypt.compare(password, user ? user.password_hash : fakeHash);
+    if (!user || !ok) return res.status(401).json({ error: 'Неверный логин или пароль' });
+    const token = jwt.sign({ id: user.id, username: user.username, color: user.color }, JWT_SECRET, { expiresIn: '30d' });
     res.json({ token, username: user.username, color: user.color, avatar: user.avatar || null });
   } catch (e) {
     console.error(e);
@@ -237,6 +283,13 @@ const voiceChannels = { 'голос-1': new Set(), 'голос-2': new Set() };
 // roomId → { members: Set<username>, soloTimer: null|timeout }
 const groupCallRooms = new Map();
 
+// ── Admin state ───────────────────────────────────────────────
+const bannedUsers   = new Set();  // banned usernames — can't reconnect
+const frozenUsers   = new Set();  // frozen — can't send messages (temporary)
+const mutedUsers    = new Set();  // mic muted by admin — client enforces, can unmute
+const slowmodeUsers = new Map();  // username → lastMsgTime (ms)
+const SLOWMODE_DELAY = 10000;     // 10 seconds between messages
+
 // ── Heartbeat — Railway kills idle WS after ~30s without activity ──
 const HEARTBEAT_INTERVAL = 20000; // 20s ping
 setInterval(() => {
@@ -319,6 +372,13 @@ wss.on('connection', (ws, req) => {
           id: user.id, username: user.username, color: user.color,
           avatar, channel: 'общий', voiceChannel: null
         });
+
+        // Check if banned
+        if (bannedUsers.has(user.username)) {
+          sendTo(ws, { type: 'kicked', reason: 'You are banned from this server.' });
+          ws.terminate();
+          return;
+        }
         // Load friends from DB
         const friendsResult = await pool.query(`
           SELECT u.username, u.color, u.avatar FROM users u
@@ -333,6 +393,7 @@ wss.on('connection', (ws, req) => {
           username: user.username,
           color: user.color,
           avatar,
+          is_admin: user.username === ADMIN_USERNAME,
           friends: friendsList,
           history: channels['общий'].slice(-50),
           voiceChannels: getVoiceChannelList()
@@ -354,7 +415,21 @@ wss.on('connection', (ws, req) => {
       case 'message': {
         const ch = data.channel || user.channel;
         if (!data.text || typeof data.text !== 'string') break;
-        if (data.text.length > 4000) break; // server-side length guard
+        if (data.text.length > 4000) break;
+        // Admin enforcement: frozen users can't send
+        if (frozenUsers.has(user.username)) {
+          sendTo(ws, { type: 'admin_action', action: 'freeze_blocked', msg: '❄️ You are frozen. Wait for unfreeze.' });
+          break;
+        }
+        // Slowmode check
+        if (slowmodeUsers.has(user.username)) {
+          const last = slowmodeUsers.get(user.username);
+          if (Date.now() - last < SLOWMODE_DELAY) {
+            sendTo(ws, { type: 'admin_action', action: 'slowmode_blocked', msg: `⏱ Slowmode: wait ${Math.ceil((SLOWMODE_DELAY - (Date.now() - last)) / 1000)}s` });
+            break;
+          }
+        }
+        if (slowmodeUsers.has(user.username)) slowmodeUsers.set(user.username, Date.now());
         const msg = {
           type: 'message',
           id: Date.now() + Math.random(),
@@ -688,6 +763,111 @@ wss.on('connection', (ws, req) => {
         }
         break;
       }
+
+      // ── ADMIN ACTIONS ─────────────────────────────────────────
+      case 'admin_action': {
+        if (user.username !== ADMIN_USERNAME) break; // only admin
+        const target = data.target;
+        if (!target || typeof target !== 'string') break;
+        const targetWs = findWsByUsername(target);
+
+        switch (data.action) {
+
+          case 'kick': {
+            if (targetWs) {
+              sendTo(targetWs, { type: 'kicked', reason: `You were kicked by admin.` });
+              setTimeout(() => targetWs.terminate(), 300);
+            }
+            broadcast({ type: 'system', text: `⚡ ${target} was kicked.`, channel: 'общий' });
+            break;
+          }
+
+          case 'ban': {
+            bannedUsers.add(target);
+            if (targetWs) {
+              sendTo(targetWs, { type: 'kicked', reason: `You are banned from this server.` });
+              setTimeout(() => targetWs.terminate(), 300);
+            }
+            broadcast({ type: 'system', text: `🚫 ${target} was banned.`, channel: 'общий' });
+            break;
+          }
+
+          case 'unban': {
+            bannedUsers.delete(target);
+            sendTo(ws, { type: 'admin_feedback', msg: `✅ ${target} unbanned.` });
+            break;
+          }
+
+          case 'freeze': {
+            frozenUsers.add(target);
+            if (targetWs) sendTo(targetWs, { type: 'admin_action', action: 'frozen', msg: `❄️ You have been frozen by admin. You cannot send messages.` });
+            sendTo(ws, { type: 'admin_feedback', msg: `❄️ ${target} frozen.` });
+            break;
+          }
+
+          case 'unfreeze': {
+            frozenUsers.delete(target);
+            if (targetWs) sendTo(targetWs, { type: 'admin_action', action: 'unfrozen', msg: `✅ You have been unfrozen.` });
+            sendTo(ws, { type: 'admin_feedback', msg: `✅ ${target} unfrozen.` });
+            break;
+          }
+
+          case 'mute_mic': {
+            mutedUsers.add(target);
+            if (targetWs) sendTo(targetWs, { type: 'admin_action', action: 'mute_mic', msg: `🔇 Admin muted your microphone.` });
+            sendTo(ws, { type: 'admin_feedback', msg: `🔇 ${target} mic muted.` });
+            break;
+          }
+
+          case 'slowmode': {
+            slowmodeUsers.set(target, 0); // start from 0 so first msg goes through
+            if (targetWs) sendTo(targetWs, { type: 'admin_action', action: 'slowmode', msg: `⏱ Admin put you in slowmode (10s between messages).` });
+            sendTo(ws, { type: 'admin_feedback', msg: `⏱ ${target} in slowmode.` });
+            break;
+          }
+
+          case 'unslowmode': {
+            slowmodeUsers.delete(target);
+            if (targetWs) sendTo(targetWs, { type: 'admin_action', action: 'unslowmode', msg: `✅ Slowmode removed.` });
+            sendTo(ws, { type: 'admin_feedback', msg: `✅ ${target} slowmode removed.` });
+            break;
+          }
+
+          case 'rename': {
+            // Change display nickname (cosmetic — doesn't change DB username)
+            const newNick = data.newNick;
+            if (!newNick || typeof newNick !== 'string' || newNick.length > 30) break;
+            if (targetWs) sendTo(targetWs, { type: 'admin_action', action: 'rename', newNick, msg: `✏️ Admin renamed you to "${newNick}".` });
+            broadcast({ type: 'system', text: `✏️ ${target} is now known as "${newNick}".`, channel: 'общий' });
+            sendTo(ws, { type: 'admin_feedback', msg: `✏️ Renamed ${target} → ${newNick}.` });
+            break;
+          }
+
+          case 'recolor': {
+            const newColor = data.color;
+            if (!newColor || !/^#[0-9a-fA-F]{6}$/.test(newColor)) break;
+            if (targetWs) sendTo(targetWs, { type: 'admin_action', action: 'recolor', color: newColor, msg: `🎨 Admin changed your color.` });
+            sendTo(ws, { type: 'admin_feedback', msg: `🎨 ${target} recolored.` });
+            break;
+          }
+
+          case 'spotlight': {
+            // Show big popup to everyone with target's name
+            broadcast({ type: 'admin_action', action: 'spotlight', target, msg: data.msg || '' });
+            break;
+          }
+
+          case 'announce': {
+            // Send a system message as server
+            const text = data.text;
+            if (!text || typeof text !== 'string' || text.length > 500) break;
+            broadcast({ type: 'system', text: `📢 [SERVER] ${text}`, channel: 'общий' });
+            break;
+          }
+        }
+        break;
+      }
+      // ── END ADMIN ─────────────────────────────────────────────
     }
   });
 

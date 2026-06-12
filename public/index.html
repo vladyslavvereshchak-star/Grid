@@ -3383,6 +3383,12 @@ function handleMsg(data) {
   switch(data.type) {
     case 'welcome':
       me.color = data.color;
+      // Set admin flag
+      if (data.is_admin) {
+        me.isAdmin = true;
+        document.body.classList.add('is-admin');
+        initAdminPanel();
+      }
       // Restore avatar from server if localStorage is empty
       if (data.avatar && !localStorage.getItem('grid_avatar')) {
         localStorage.setItem('grid_avatar', data.avatar);
@@ -3557,6 +3563,52 @@ function handleMsg(data) {
     case 'group_call_offer':       handleGroupCallOffer(data);      break;
     case 'group_call_answer':      handleGroupCallAnswer(data);     break;
     case 'group_call_ice':         handleGroupCallIce(data);        break;
+
+    case 'admin_feedback':
+      showNotif(data.msg, 'blue');
+      break;
+
+    case 'admin_action': {
+      switch(data.action) {
+        case 'frozen':
+          showAdminAlert('❄️ FROZEN', data.msg, '#6ab4ff');
+          break;
+        case 'unfrozen':
+          showNotif(data.msg, 'blue');
+          break;
+        case 'mute_mic':
+          // Force mute mic — user can unmute themselves
+          if (localStream) localStream.getAudioTracks().forEach(t => t.enabled = false);
+          callMuted = true;
+          updateMuteUI();
+          showAdminAlert('🔇 MUTED', data.msg, '#f06a8a');
+          break;
+        case 'slowmode':
+          showNotif(data.msg, 'blue');
+          break;
+        case 'unslowmode':
+          showNotif(data.msg, 'blue');
+          break;
+        case 'rename':
+          showAdminAlert('✏️ RENAMED', data.msg, '#f0b44a');
+          // Visually update display name temporarily
+          document.getElementById('my-username-display') && (document.getElementById('my-username-display').textContent = data.newNick);
+          break;
+        case 'recolor':
+          showAdminAlert('🎨 RECOLORED', data.msg, data.color);
+          me.color = data.color;
+          updateMyProfile();
+          break;
+        case 'spotlight':
+          showSpotlight(data.target, data.msg);
+          break;
+        case 'freeze_blocked':
+        case 'slowmode_blocked':
+          showNotif(data.msg);
+          break;
+      }
+      break;
+    }
   } // end switch
 } // end handleMsg
 
@@ -7267,6 +7319,211 @@ document.addEventListener('DOMContentLoaded', function() {
   };
 })();
 
+</script>
+<!-- ══════════════════════════════════════════════════ -->
+<!-- ADMIN PANEL -->
+<!-- ══════════════════════════════════════════════════ -->
+<div id="admin-panel" style="display:none;position:fixed;bottom:80px;right:20px;width:280px;background:var(--panel);border:1px solid var(--border);border-radius:8px;z-index:9000;box-shadow:0 8px 32px rgba(0,0,0,0.5);font-family:'JetBrains Mono',monospace;font-size:12px">
+  <div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+    <span style="color:var(--accent);font-weight:700;letter-spacing:0.1em">⚡ ADMIN</span>
+    <span onclick="toggleAdminPanel()" style="cursor:pointer;color:var(--text3);font-size:16px">✕</span>
+  </div>
+  <div style="padding:10px 14px">
+    <div style="color:var(--text3);margin-bottom:8px;font-size:11px">TARGET USER</div>
+    <select id="admin-target" style="width:100%;background:var(--bg2);border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:4px;margin-bottom:10px;font-family:inherit;font-size:12px">
+      <option value="">— select user —</option>
+    </select>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">
+      <button class="admin-btn" onclick="adminAction('kick')">⚡ Kick</button>
+      <button class="admin-btn admin-btn-red" onclick="adminAction('ban')">🚫 Ban</button>
+      <button class="admin-btn" onclick="adminAction('freeze')">❄️ Freeze</button>
+      <button class="admin-btn" onclick="adminAction('unfreeze')">🔥 Unfreeze</button>
+      <button class="admin-btn" onclick="adminAction('mute_mic')">🔇 Mute mic</button>
+      <button class="admin-btn" onclick="adminAction('slowmode')">⏱ Slowmode</button>
+      <button class="admin-btn" onclick="adminAction('unslowmode')" style="grid-column:span 2">✅ Remove slowmode</button>
+    </div>
+
+    <div style="color:var(--text3);margin-bottom:6px;font-size:11px">RENAME</div>
+    <div style="display:flex;gap:6px;margin-bottom:10px">
+      <input id="admin-rename-input" placeholder="new nickname" style="flex:1;background:var(--bg2);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:4px;font-family:inherit;font-size:12px">
+      <button class="admin-btn" onclick="adminAction('rename')">✏️</button>
+    </div>
+
+    <div style="color:var(--text3);margin-bottom:6px;font-size:11px">RECOLOR</div>
+    <div style="display:flex;gap:6px;margin-bottom:10px">
+      <input id="admin-color-input" type="color" value="#f06a8a" style="flex:0 0 40px;height:30px;background:none;border:1px solid var(--border);border-radius:4px;cursor:pointer;padding:2px">
+      <button class="admin-btn" onclick="adminAction('recolor')" style="flex:1">🎨 Recolor</button>
+    </div>
+
+    <div style="color:var(--text3);margin-bottom:6px;font-size:11px">SPOTLIGHT MESSAGE</div>
+    <div style="display:flex;gap:6px;margin-bottom:10px">
+      <input id="admin-spotlight-msg" placeholder="optional message" style="flex:1;background:var(--bg2);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:4px;font-family:inherit;font-size:12px">
+      <button class="admin-btn" onclick="adminAction('spotlight')">🔦</button>
+    </div>
+
+    <div style="color:var(--text3);margin-bottom:6px;font-size:11px">SERVER ANNOUNCE</div>
+    <div style="display:flex;gap:6px">
+      <input id="admin-announce-input" placeholder="message to everyone" style="flex:1;background:var(--bg2);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:4px;font-family:inherit;font-size:12px">
+      <button class="admin-btn" onclick="adminAnnounce()">📢</button>
+    </div>
+  </div>
+</div>
+
+<!-- Admin toggle button — only shown for admin -->
+<div id="admin-toggle-btn" onclick="toggleAdminPanel()" style="display:none;position:fixed;bottom:24px;right:20px;width:40px;height:40px;background:var(--panel);border:1px solid var(--accent-border);border-radius:8px;z-index:9001;cursor:pointer;align-items:center;justify-content:center;font-size:18px;color:var(--accent)" title="Admin Panel">⚡</div>
+
+<!-- Admin alert overlay -->
+<div id="admin-alert" style="display:none;position:fixed;inset:0;z-index:9999;pointer-events:none;align-items:center;justify-content:center">
+  <div id="admin-alert-box" style="background:var(--panel);border:2px solid var(--accent);border-radius:12px;padding:32px 40px;text-align:center;font-family:'JetBrains Mono',monospace;max-width:380px;box-shadow:0 0 40px rgba(0,229,255,0.2)">
+    <div id="admin-alert-title" style="font-size:24px;font-weight:700;margin-bottom:12px"></div>
+    <div id="admin-alert-msg" style="color:var(--text2);font-size:13px"></div>
+  </div>
+</div>
+
+<!-- Spotlight overlay -->
+<div id="spotlight-overlay" style="display:none;position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,0.85);align-items:center;justify-content:center;backdrop-filter:blur(8px)" onclick="document.getElementById('spotlight-overlay').style.display='none'">
+  <div style="text-align:center">
+    <div id="spotlight-avatar-wrap" style="width:100px;height:100px;border-radius:50%;margin:0 auto 20px;border:3px solid var(--accent);overflow:hidden;background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:40px"></div>
+    <div id="spotlight-name" style="font-size:36px;font-weight:700;color:var(--text);font-family:'JetBrains Mono',monospace;letter-spacing:0.05em"></div>
+    <div id="spotlight-msg" style="font-size:16px;color:var(--text2);margin-top:12px;font-family:'JetBrains Mono',monospace"></div>
+    <div style="color:var(--text3);font-size:11px;margin-top:24px">click to dismiss</div>
+  </div>
+</div>
+
+<style>
+.admin-btn {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  transition: background 0.15s, border-color 0.15s;
+}
+.admin-btn:hover { background: var(--bg3, #131416); border-color: var(--accent-border); color: var(--accent); }
+.admin-btn-red:hover { border-color: var(--red, #f06a8a); color: var(--red, #f06a8a); }
+</style>
+
+<script>
+// ══════════════════════════════════════════════════
+//  ADMIN PANEL
+// ══════════════════════════════════════════════════
+let adminPanelOpen = false;
+
+function initAdminPanel() {
+  const btn = document.getElementById('admin-toggle-btn');
+  if (btn) btn.style.display = 'flex';
+}
+
+function toggleAdminPanel() {
+  adminPanelOpen = !adminPanelOpen;
+  const panel = document.getElementById('admin-panel');
+  if (!panel) return;
+  if (adminPanelOpen) {
+    panel.style.display = 'block';
+    refreshAdminTargetList();
+  } else {
+    panel.style.display = 'none';
+  }
+}
+
+function refreshAdminTargetList() {
+  const sel = document.getElementById('admin-target');
+  if (!sel) return;
+  // Get online users from the sidebar
+  const current = sel.value;
+  sel.innerHTML = '<option value="">— select user —</option>';
+  for (const [username, u] of Object.entries(friends)) {
+    if (username === me.name) continue;
+    const opt = document.createElement('option');
+    opt.value = username;
+    opt.textContent = username + (u.online ? ' 🟢' : ' ⚫');
+    sel.appendChild(opt);
+  }
+  // Also add any online users not in friends
+  if (window.onlineUsersList) {
+    for (const u of window.onlineUsersList) {
+      if (u.username === me.name) continue;
+      if (!friends[u.username]) {
+        const opt = document.createElement('option');
+        opt.value = u.username;
+        opt.textContent = u.username + ' 🟢';
+        sel.appendChild(opt);
+      }
+    }
+  }
+  if (current) sel.value = current;
+}
+
+function adminAction(action) {
+  if (!me.isAdmin) return;
+  const target = document.getElementById('admin-target')?.value;
+  if (!target && action !== 'announce') { showNotif('Select a user first'); return; }
+
+  const payload = { type: 'admin_action', action, target };
+
+  if (action === 'rename') {
+    const newNick = document.getElementById('admin-rename-input')?.value?.trim();
+    if (!newNick) { showNotif('Enter a nickname'); return; }
+    payload.newNick = newNick;
+  }
+  if (action === 'recolor') {
+    payload.color = document.getElementById('admin-color-input')?.value || '#f06a8a';
+  }
+  if (action === 'spotlight') {
+    payload.msg = document.getElementById('admin-spotlight-msg')?.value?.trim() || '';
+  }
+
+  wsSend(payload);
+}
+
+function adminAnnounce() {
+  if (!me.isAdmin) return;
+  const text = document.getElementById('admin-announce-input')?.value?.trim();
+  if (!text) { showNotif('Enter a message'); return; }
+  wsSend({ type: 'admin_action', action: 'announce', target: '__server__', text });
+  document.getElementById('admin-announce-input').value = '';
+}
+
+function showAdminAlert(title, msg, color) {
+  const overlay = document.getElementById('admin-alert');
+  const box     = document.getElementById('admin-alert-box');
+  const titleEl = document.getElementById('admin-alert-title');
+  const msgEl   = document.getElementById('admin-alert-msg');
+  if (!overlay) return;
+  titleEl.textContent = title;
+  msgEl.textContent   = msg;
+  box.style.borderColor = color || 'var(--accent)';
+  overlay.style.display = 'flex';
+  setTimeout(() => { overlay.style.display = 'none'; }, 4000);
+}
+
+function showSpotlight(username, msg) {
+  const overlay = document.getElementById('spotlight-overlay');
+  if (!overlay) return;
+  document.getElementById('spotlight-name').textContent = username.toUpperCase();
+  document.getElementById('spotlight-msg').textContent  = msg || '';
+  // Try to show avatar
+  const avatarWrap = document.getElementById('spotlight-avatar-wrap');
+  const av = avatarCache?.get(username) || friends[username]?.avatar;
+  if (av) {
+    avatarWrap.innerHTML = `<img src="${av}" style="width:100%;height:100%;object-fit:cover">`;
+  } else {
+    avatarWrap.textContent = username[0]?.toUpperCase() || '?';
+  }
+  overlay.style.display = 'flex';
+}
+
+// Keep admin target list fresh when users go online/offline
+const _origUpdateUserList = window.updateUserList || updateUserList;
+window.updateUserList = function(users) {
+  window.onlineUsersList = users;
+  _origUpdateUserList(users);
+  if (adminPanelOpen) refreshAdminTargetList();
+};
 </script>
 </body>
 </html>
