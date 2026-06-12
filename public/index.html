@@ -2259,8 +2259,8 @@ input[type=range]:focus{outline:none}
       </div>
       <div id="call-bar-timer-inline" class="cbar-timer">00:00</div>
     </div>
-    <!-- Controls row — Discord style -->
-    <div id="cbar-voice-controls">
+    <!-- Controls row — moved to chat header for compact layout -->
+    <div id="cbar-voice-controls" style="display:none">
       <div id="cbar-add-btn" class="cbar-icon-btn" onclick="openGroupCallModal()" title="Add to call" style="display:none">
         <i class="ti ti-user-plus"></i>
       </div>
@@ -2331,6 +2331,18 @@ input[type=range]:focus{outline:none}
         <!-- Call button — only shown in DM mode -->
         <div class="call-btn" id="call-btn" style="display:none" onclick="startCall()" title="Call">
           <i class="ti ti-phone"></i>
+        </div>
+        <!-- In-call controls — shown in header during active call -->
+        <div id="header-call-controls" style="display:none;align-items:center;gap:4px">
+          <div id="header-mute-btn" class="call-btn" onclick="toggleCallMute()" title="Mute" style="width:28px;height:28px;padding:0;display:flex;align-items:center;justify-content:center">
+            <i class="ti ti-microphone" id="header-mute-icon"></i>
+          </div>
+          <div id="header-sound-btn" class="call-btn" onclick="toggleCallSound()" title="Deafen" style="width:28px;height:28px;padding:0;display:flex;align-items:center;justify-content:center">
+            <i class="ti ti-volume" id="header-sound-icon"></i>
+          </div>
+          <div class="call-btn" onclick="endGroupCallOrCall()" title="End call" style="width:28px;height:28px;padding:0;display:flex;align-items:center;justify-content:center;color:var(--red);border-color:var(--red-border);background:var(--red-dim)">
+            <i class="ti ti-phone-off"></i>
+          </div>
         </div>
         <div class="conn-badge connecting" id="conn-badge">● connecting</div>
       </div>
@@ -3607,6 +3619,9 @@ function startCall() {
   const btn = document.getElementById('call-btn');
   btn.classList.add('in-call');
   btn.innerHTML = '<i class="ti ti-phone-off"></i>';
+  // Show in-header call controls
+  const hcc = document.getElementById('header-call-controls');
+  if (hcc) hcc.style.display = 'flex';
 
   // Signal the other side
   wsSend({ type: 'call_invite', to: dmWith.username, fromColor: me.color });
@@ -3763,8 +3778,9 @@ function acceptIncomingCall() {
   const btn = document.getElementById('call-btn');
   btn.classList.add('in-call');
   btn.innerHTML = '<i class="ti ti-phone-off"></i>';
-
-  // Сначала поднимаем WebRTC, только потом говорим caller-у что готовы
+  // Show in-header call controls
+  const hcc = document.getElementById('header-call-controls');
+  if (hcc) hcc.style.display = 'flex';
   startCallWebRTC(callPeer.username, false).then(() => {
     wsSend({ type: 'call_accept', to: callPeer ? callPeer.username : '' });
     // Show add-participants button
@@ -3872,6 +3888,9 @@ function endCallUI() {
 
   const btn = document.getElementById('call-btn');
   if (btn) { btn.classList.remove('in-call'); btn.innerHTML = '<i class="ti ti-phone"></i>'; }
+  // Hide in-header call controls
+  const hcc = document.getElementById('header-call-controls');
+  if (hcc) hcc.style.display = 'none';
   const addBtn = document.getElementById('cbar-add-btn');
   if (addBtn) addBtn.style.display = 'none';
 }
@@ -4264,6 +4283,11 @@ function toggleCallMute() {
   // Avatar wrap muted indicator
   const avMeWrap = document.getElementById('cbar-av-me-wrap');
   if (avMeWrap) avMeWrap.classList.toggle('muted', callMuted);
+  // Header controls sync
+  const hBtn = document.getElementById('header-mute-btn');
+  const hIco = document.getElementById('header-mute-icon');
+  if (hBtn) { hBtn.style.color = callMuted ? 'var(--red)' : ''; hBtn.style.borderColor = callMuted ? 'var(--red-border)' : ''; hBtn.style.background = callMuted ? 'var(--red-dim)' : ''; }
+  if (hIco) hIco.className = callMuted ? 'ti ti-microphone-off' : 'ti ti-microphone';
   if (localStream) localStream.getAudioTracks().forEach(t => t.enabled = !callMuted);
   if (callStream) {
     callStream.getAudioTracks().forEach(t => t.enabled = !callMuted);
@@ -4289,6 +4313,11 @@ function toggleCallSound() {
   const chatIco = document.getElementById('chat-call-sound-icon');
   if (chatBtn) chatBtn.classList.toggle('muted', callSoundMuted);
   if (chatIco) chatIco.className = callSoundMuted ? 'ti ti-volume-off' : 'ti ti-volume';
+  // Header controls sync
+  const hSBtn = document.getElementById('header-sound-btn');
+  const hSIco = document.getElementById('header-sound-icon');
+  if (hSBtn) { hSBtn.style.color = callSoundMuted ? 'var(--red)' : ''; hSBtn.style.borderColor = callSoundMuted ? 'var(--red-border)' : ''; hSBtn.style.background = callSoundMuted ? 'var(--red-dim)' : ''; }
+  if (hSIco) hSIco.className = callSoundMuted ? 'ti ti-volume-off' : 'ti ti-volume';
   for (const audio of Object.values(audioElements)) { audio.muted = callSoundMuted; }
   const callAudio = document.getElementById('call-remote-audio');
   if (callAudio) callAudio.muted = callSoundMuted;
