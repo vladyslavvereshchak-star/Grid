@@ -351,6 +351,8 @@ wss.on('connection', (ws, req) => {
     if (!user) return;
 
     switch (data.type) {
+      case 'ping': break; // client keepalive — no response needed, just keeps connection alive
+
       case 'message': {
         const ch = data.channel || user.channel;
         if (!data.text || typeof data.text !== 'string') break;

@@ -3331,24 +3331,31 @@ window.addEventListener('load', () => {
 // ── WEBSOCKET ──
 let _reconnectAttempts = 0;
 let _reconnectTimer = null;
+let _keepaliveTimer = null;
 
 function connect(token) {
+  // Clear any existing keepalive
+  if (_keepaliveTimer) { clearInterval(_keepaliveTimer); _keepaliveTimer = null; }
+
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}`);
   ws.onopen = () => {
-    _reconnectAttempts = 0; // сбрасываем счётчик при успехе
+    _reconnectAttempts = 0;
     setConnBadge('online');
     ws.send(JSON.stringify({ type:'auth', token }));
     document.getElementById('server-ip-display').textContent = location.host;
+    // Keepalive — send ping every 25s to prevent Railway proxy from closing idle connections
+    _keepaliveTimer = setInterval(() => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'ping' }));
+      }
+    }, 25000);
   };
   ws.onclose = () => {
     setConnBadge('offline');
+    if (_keepaliveTimer) { clearInterval(_keepaliveTimer); _keepaliveTimer = null; }
     if (callActive || callSolo) {
-      // Delay endCallUI — WS may reconnect quickly (Railway keep-alive, network blip).
-      // WebRTC is peer-to-peer and survives WS drops, so don't kill the UI immediately.
-      const snapActive = callActive, snapSolo = callSolo;
       setTimeout(() => {
-        // Only tear down if still disconnected (ws is null or not OPEN) AND still in call state
         const wsGone = !ws || ws.readyState !== WebSocket.OPEN;
         if (wsGone && (callActive || callSolo)) {
           callActive = false; callSolo = false; callPeer = null;
@@ -3356,7 +3363,7 @@ function connect(token) {
           markWidgetEnded();
           endCallUI();
         }
-      }, 5000); // 5s grace — enough for Railway to reconnect
+      }, 5000);
     }
     const t2 = localStorage.getItem('grid_token');
     if (!t2) return;
