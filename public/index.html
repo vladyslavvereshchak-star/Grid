@@ -3373,7 +3373,7 @@ function connect(token) {
     clearTimeout(_reconnectTimer);
     _reconnectTimer = setTimeout(() => connect(t2), delay);
   };
-  ws.onerror = () => setConnBadge('offline');
+  ws.onerror = () => { if (!ws || ws.readyState !== WebSocket.OPEN) setConnBadge('offline'); };
   ws.onmessage = (e) => {
     try { handleMsg(JSON.parse(e.data)); } catch(err) { console.error('WS parse error', err); }
   };
@@ -3383,6 +3383,7 @@ function handleMsg(data) {
   switch(data.type) {
     case 'welcome':
       me.color = data.color;
+      setConnBadge('online');
       // Set admin flag
       if (data.is_admin) {
         me.isAdmin = true;
