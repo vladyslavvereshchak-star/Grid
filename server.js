@@ -7,130 +7,26 @@ try {
     if (key && val.length) process.env[key] = val.join('=');
   });
 } catch(e) {}
-
-const express  = require('express');
-const http     = require('http');
+const express = require('express');
+const http = require('http');
 const WebSocket = require('ws');
-const path     = require('path');
-const bcrypt   = require('bcryptjs');
-const jwt      = require('jsonwebtoken');
+const path = require('path');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
 
-const app    = express();
+const app = express();
 const server = http.createServer(app);
-const wss    = new WebSocket.Server({ server, maxPayload: 10 * 1024 * 1024 }); // 10MB max (was 70MB)
+const wss = new WebSocket.Server({ server, maxPayload: 70 * 1024 * 1024 });
 
-// ══════════════════════════════════════════════════════════════
-//  SECURITY CONFIG
-// ══════════════════════════════════════════════════════════════
+app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.json({ limit: '70mb' }));
 
 const JWT_SECRET = process.env.JWT_SECRET || 'grid-secret-key-change-in-prod';
-if (!process.env.JWT_SECRET) console.warn('⚠️  JWT_SECRET not set — using default (insecure in production!)');
 
-const JWT_EXPIRES_IN = '30d';   // tokens expire after 30 days
-const BCRYPT_ROUNDS  = 12;      // stronger than default 10
-
-// ── Security Headers ──────────────────────────────────────────
-app.use((req, res, next) => {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('X-XSS-Protection', '1; mode=block');
-  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Permissions-Policy', 'geolocation=(), camera=(), microphone=(self)');
-  if (process.env.NODE_ENV === 'production') {
-    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-  }
-  next();
-});
-
-// ── Rate Limiter (in-memory, no redis needed) ──────────────────
-class RateLimiter {
-  constructor(windowMs, maxRequests) {
-    this.windowMs    = windowMs;
-    this.maxRequests = maxRequests;
-    this.store       = new Map();
-    // Cleanup every 5 minutes
-    setInterval(() => {
-      const now = Date.now();
-      for (const [key, data] of this.store) {
-        if (now - data.windowStart > this.windowMs * 2) this.store.delete(key);
-      }
-    }, 5 * 60 * 1000);
-  }
-
-  check(ip) {
-    const now = Date.now();
-    let data  = this.store.get(ip);
-    if (!data || now - data.windowStart > this.windowMs) {
-      data = { windowStart: now, count: 0 };
-    }
-    data.count++;
-    this.store.set(ip, data);
-    return data.count <= this.maxRequests;
-  }
-
-  middleware() {
-    return (req, res, next) => {
-      const ip = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress || 'unknown';
-      if (!this.check(ip)) {
-        return res.status(429).json({ error: 'Слишком много запросов. Подожди немного.' });
-      }
-      next();
-    };
-  }
-}
-
-// Auth endpoints: 10 requests per 15 minutes per IP
-const authLimiter = new RateLimiter(15 * 60 * 1000, 10);
-// Avatar/profile: 20 per 10 minutes
-const profileLimiter = new RateLimiter(10 * 60 * 1000, 20);
-
-// ── WS Auth Timeout — close unauthenticated connections ───────
-const WS_AUTH_TIMEOUT_MS = 10000; // 10 seconds to send auth
-
-// ── Input sanitization ────────────────────────────────────────
-function sanitizeText(text) {
-  if (typeof text !== 'string') return '';
-  // Strip null bytes and control chars (keep newlines/tabs)
-  return text.replace(/\0/g, '').replace(/[\x01-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
-}
-
-function isValidUsername(username) {
-  // 3-30 chars, alphanumeric + underscore + hyphen only
-  return /^[a-zA-Z0-9_\-а-яА-ЯёЁ]{3,30}$/.test(username);
-}
-
-function isValidPassword(password) {
-  return typeof password === 'string' && password.length >= 8 && password.length <= 128;
-}
-
-// ── Auth middleware for HTTP routes ───────────────────────────
-function requireAuth(req, res, next) {
-  const auth = req.headers.authorization;
-  if (!auth || !auth.startsWith('Bearer ')) return res.status(401).json({ error: 'Нет токена' });
-  try {
-    req.jwtUser = jwt.verify(auth.slice(7), JWT_SECRET);
-    next();
-  } catch(e) {
-    return res.status(401).json({ error: 'Недействительный токен' });
-  }
-}
-
-// ══════════════════════════════════════════════════════════════
-//  MIDDLEWARE
-// ══════════════════════════════════════════════════════════════
-app.use(express.static(path.join(__dirname, 'public')));
-app.use(express.json({ limit: '5mb' })); // was 70mb — no reason to allow that
-
-// ══════════════════════════════════════════════════════════════
-//  DATABASE
-// ══════════════════════════════════════════════════════════════
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
-  max: 10,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
+  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
 });
 
 async function initDB() {
@@ -144,12 +40,15 @@ async function initDB() {
       created_at TIMESTAMP DEFAULT NOW()
     );
     CREATE TABLE IF NOT EXISTS friends (
-      user1_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-      user2_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      user1_id INTEGER REFERENCES users(id),
+      user2_id INTEGER REFERENCES users(id),
       PRIMARY KEY (user1_id, user2_id)
     );
   `);
-  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT DEFAULT NULL;`).catch(() => {});
+  // Add avatar column if upgrading existing DB
+  await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT DEFAULT NULL;
+  `).catch(() => {});
   await pool.query(`
     CREATE TABLE IF NOT EXISTS messages (
       id BIGSERIAL PRIMARY KEY,
@@ -177,118 +76,110 @@ async function initDB() {
   `);
   console.log('✅ БД готова');
 }
+
 initDB().catch(console.error);
 
-// ══════════════════════════════════════════════════════════════
-//  HTTP API
-// ══════════════════════════════════════════════════════════════
-
-app.post('/api/register', authLimiter.middleware(), async (req, res) => {
+app.post('/api/register', async (req, res) => {
   const { username, password } = req.body;
-
-  if (!username || !password)
-    return res.status(400).json({ error: 'Введи логин и пароль' });
-  if (!isValidUsername(username))
-    return res.status(400).json({ error: 'Логин: 3–30 символов, только буквы/цифры/_ и -' });
-  if (!isValidPassword(password))
-    return res.status(400).json({ error: 'Пароль: минимум 8 символов, максимум 128' });
+  if (!username || !password) return res.status(400).json({ error: 'Введи логин и пароль' });
+  if (username.length < 3) return res.status(400).json({ error: 'Логин минимум 3 символа' });
+  if (password.length < 6) return res.status(400).json({ error: 'Пароль минимум 6 символов' });
 
   try {
     const colors = ['#4af0c0','#6ab4ff','#f0b44a','#c084fc','#f06a8a','#7af06a'];
-    const color  = colors[Math.floor(Math.random() * colors.length)];
-    const hash   = await bcrypt.hash(password, BCRYPT_ROUNDS);
+    const color = colors[Math.floor(Math.random() * colors.length)];
+    const hash = await bcrypt.hash(password, 10);
     const result = await pool.query(
       'INSERT INTO users (username, password_hash, color) VALUES ($1, $2, $3) RETURNING id, username, color',
-      [username.trim(), hash, color]
+      [username, hash, color]
     );
-    const user  = result.rows[0];
-    const token = jwt.sign(
-      { id: user.id, username: user.username, color: user.color },
-      JWT_SECRET,
-      { expiresIn: JWT_EXPIRES_IN }
-    );
+    const user = result.rows[0];
+    const token = jwt.sign({ id: user.id, username: user.username, color: user.color }, JWT_SECRET);
     res.json({ token, username: user.username, color: user.color });
-  } catch(e) {
+  } catch (e) {
     if (e.code === '23505') return res.status(400).json({ error: 'Такой логин уже занят' });
-    console.error('register error:', e.message);
+    console.error(e);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
 
-app.post('/api/login', authLimiter.middleware(), async (req, res) => {
+app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
-  if (!username || !password)
-    return res.status(400).json({ error: 'Введи логин и пароль' });
+  if (!username || !password) return res.status(400).json({ error: 'Введи логин и пароль' });
 
   try {
     const result = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
-
-    // Always run bcrypt even if user not found — prevents timing attacks
-    const fakeHash = '$2a$12$invalidhashfortimingreasonxxxxxxxxxxxxxxxxxxxxxxxxx';
-    const user = result.rows[0] || null;
-    const hash = user ? user.password_hash : fakeHash;
-    const ok   = await bcrypt.compare(password, hash);
-
-    if (!user || !ok)
-      return res.status(401).json({ error: 'Неверный логин или пароль' });
-
-    const token = jwt.sign(
-      { id: user.id, username: user.username, color: user.color },
-      JWT_SECRET,
-      { expiresIn: JWT_EXPIRES_IN }
-    );
+    if (result.rows.length === 0) return res.status(401).json({ error: 'Неверный логин или пароль' });
+    const user = result.rows[0];
+    const ok = await bcrypt.compare(password, user.password_hash);
+    if (!ok) return res.status(401).json({ error: 'Неверный логин или пароль' });
+    const token = jwt.sign({ id: user.id, username: user.username, color: user.color }, JWT_SECRET);
     res.json({ token, username: user.username, color: user.color, avatar: user.avatar || null });
-  } catch(e) {
-    console.error('login error:', e.message);
+  } catch (e) {
+    console.error(e);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
 
-app.post('/api/change-password', requireAuth, profileLimiter.middleware(), async (req, res) => {
-  const { password } = req.body;
-  if (!isValidPassword(password))
-    return res.status(400).json({ error: 'Пароль: минимум 8 символов, максимум 128' });
+app.post('/api/change-password', async (req, res) => {
+  const auth = req.headers.authorization;
+  if (!auth) return res.status(401).json({ error: 'Нет токена' });
   try {
-    const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
-    await pool.query('UPDATE users SET password_hash=$1 WHERE id=$2', [hash, req.jwtUser.id]);
+    const user = jwt.verify(auth.replace('Bearer ', ''), JWT_SECRET);
+    const { password } = req.body;
+    if (!password || password.length < 6) return res.status(400).json({ error: 'Пароль минимум 6 символов' });
+    const hash = await bcrypt.hash(password, 10);
+    await pool.query('UPDATE users SET password_hash=$1 WHERE id=$2', [hash, user.id]);
     res.json({ ok: true });
   } catch(e) {
-    console.error('change-password error:', e.message);
-    res.status(500).json({ error: 'Ошибка сервера' });
+    res.status(401).json({ error: 'Ошибка авторизации' });
   }
 });
 
-app.post('/api/avatar', requireAuth, profileLimiter.middleware(), async (req, res) => {
-  const { avatar } = req.body;
-  if (avatar !== null && avatar !== undefined) {
-    if (typeof avatar !== 'string' || !avatar.startsWith('data:image/'))
-      return res.status(400).json({ error: 'Неверный формат изображения' });
-    // Only allow jpeg/png/webp/gif
-    if (!/^data:image\/(jpeg|jpg|png|webp|gif);base64,/.test(avatar))
-      return res.status(400).json({ error: 'Разрешены только JPEG, PNG, WebP, GIF' });
-    if (avatar.length > 200000)
-      return res.status(400).json({ error: 'Изображение слишком большое' });
-  }
+app.post('/api/avatar', async (req, res) => {
+  const auth = req.headers.authorization;
+  if (!auth) return res.status(401).json({ error: 'Нет токена' });
   try {
-    await pool.query('UPDATE users SET avatar=$1 WHERE id=$2', [avatar || null, req.jwtUser.id]);
-    const avatarUpdate = JSON.stringify({ type: 'avatar_update', username: req.jwtUser.username, avatar: avatar || null });
+    const user = jwt.verify(auth.replace('Bearer ', ''), JWT_SECRET);
+    const { avatar } = req.body;
+
+    if (avatar !== null && avatar !== undefined) {
+      if (!avatar.startsWith('data:image/')) return res.status(400).json({ error: 'Invalid image format' });
+      if (avatar.length > 200000) return res.status(400).json({ error: 'Image too large' });
+    }
+
+    await pool.query('UPDATE users SET avatar=$1 WHERE id=$2', [avatar || null, user.id]);
+
+    const avatarUpdate = JSON.stringify({
+      type: 'avatar_update',
+      username: user.username,
+      avatar: avatar || null
+    });
     wss.clients.forEach(client => {
       if (client.readyState === WebSocket.OPEN) client.send(avatarUpdate);
     });
+
     res.json({ ok: true });
   } catch(e) {
-    console.error('avatar error:', e.message);
-    res.status(500).json({ error: 'Ошибка сервера' });
+    console.error(e);
+    res.status(401).json({ error: 'Ошибка авторизации' });
   }
 });
 
+// ── ICE Servers API — позволяет настраивать TURN через Railway env vars ──
+// Установи в Railway: TURN_URL, TURN_USERNAME, TURN_CREDENTIAL
+// Например: TURN_URL=turn:your-server.com:3478
 app.get('/api/ice-servers', (req, res) => {
   const servers = [];
+
+  // Если в env есть кастомный TURN — добавляем его первым (высший приоритет)
   if (process.env.TURN_URL) {
     const entry = { urls: process.env.TURN_URL };
     if (process.env.TURN_USERNAME) entry.username = process.env.TURN_USERNAME;
     if (process.env.TURN_CREDENTIAL) entry.credential = process.env.TURN_CREDENTIAL;
     servers.push(entry);
+
+    // TCP fallback для того же сервера
     if (!process.env.TURN_URL.includes('transport=')) {
       const tcpEntry = { urls: process.env.TURN_URL + '?transport=tcp' };
       if (process.env.TURN_USERNAME) tcpEntry.username = process.env.TURN_USERNAME;
@@ -296,29 +187,23 @@ app.get('/api/ice-servers', (req, res) => {
       servers.push(tcpEntry);
     }
   }
+
+  // Если в env есть второй TURN — тоже добавляем
   if (process.env.TURN_URL_2) {
     const entry2 = { urls: process.env.TURN_URL_2 };
     if (process.env.TURN_USERNAME_2) entry2.username = process.env.TURN_USERNAME_2;
     if (process.env.TURN_CREDENTIAL_2) entry2.credential = process.env.TURN_CREDENTIAL_2;
     servers.push(entry2);
   }
+
   res.json({ iceServers: servers });
 });
 
-// ══════════════════════════════════════════════════════════════
-//  CHAT STATE
-// ══════════════════════════════════════════════════════════════
-const channels      = { 'общий': [], 'игры': [], 'фидбек': [] };
-const onlineUsers   = new Map();  // ws → user object
-const dmHistory     = new Map();  // key → messages[]
-const voiceChannels = { 'голос-1': new Set(), 'голос-2': new Set() };
-const groupCallRooms = new Map(); // roomId → { members: Set, soloTimer }
+const channels = { 'общий': [], 'игры': [], 'фидбек': [] };
+const onlineUsers = new Map();
+const dmHistory = new Map();
 
-// ── WS rate limiting ──────────────────────────────────────────
-// Per-connection message limits to prevent flood
-const WS_MSG_LIMIT    = 30;   // messages per window
-const WS_MSG_WINDOW   = 5000; // 5 second window
-
+// Load messages from DB into memory
 async function loadHistory() {
   try {
     const res = await pool.query(`SELECT * FROM messages ORDER BY created_at DESC LIMIT 500`);
@@ -346,10 +231,14 @@ async function loadHistory() {
 }
 loadHistory();
 
-// ══════════════════════════════════════════════════════════════
-//  HEARTBEAT — keeps Railway WS alive
-// ══════════════════════════════════════════════════════════════
-const HEARTBEAT_INTERVAL = 20000;
+const voiceChannels = { 'голос-1': new Set(), 'голос-2': new Set() };
+
+// ── Group call rooms (DM group calls, up to 8 people) ──
+// roomId → { members: Set<username>, soloTimer: null|timeout }
+const groupCallRooms = new Map();
+
+// ── Heartbeat — Railway kills idle WS after ~30s without activity ──
+const HEARTBEAT_INTERVAL = 20000; // 20s ping
 setInterval(() => {
   wss.clients.forEach(ws => {
     if (ws.isAlive === false) { ws.terminate(); return; }
@@ -358,20 +247,19 @@ setInterval(() => {
   });
 }, HEARTBEAT_INTERVAL);
 
-// ══════════════════════════════════════════════════════════════
-//  HELPERS
-// ══════════════════════════════════════════════════════════════
 function dmKey(a, b) { return [a, b].sort().join('|'); }
 
 function broadcast(data, excludeWs = null) {
   const msg = JSON.stringify(data);
   wss.clients.forEach(client => {
-    if (client.readyState === WebSocket.OPEN && client !== excludeWs) client.send(msg);
+    if (client.readyState === WebSocket.OPEN && client !== excludeWs) {
+      client.send(msg);
+    }
   });
 }
 
 function sendTo(ws, data) {
-  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data));
+  if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data));
 }
 
 function getUserList() {
@@ -403,56 +291,21 @@ function broadcastVoiceState() {
   broadcast({ type: 'voice_state', channels: getVoiceChannelList() });
 }
 
-// ══════════════════════════════════════════════════════════════
-//  WEBSOCKET
-// ══════════════════════════════════════════════════════════════
 wss.on('connection', (ws, req) => {
-  ws.isAlive    = true;
-  ws.isAuthed   = false;
-  ws.msgCount   = 0;
-  ws.msgWindowStart = Date.now();
-
+  ws.isAlive = true;
   ws.on('pong', () => { ws.isAlive = true; });
 
-  // ── Auth timeout — close if no auth within 10 seconds ──
-  const authTimeout = setTimeout(() => {
-    if (!ws.isAuthed) {
-      sendTo(ws, { type: 'auth_error', error: 'Таймаут авторизации' });
-      ws.terminate();
-    }
-  }, WS_AUTH_TIMEOUT_MS);
-
   ws.on('message', async (raw) => {
-    // ── Size guard ──
-    if (raw.length > 512 * 1024) return; // 512KB max per WS message
-
     let data;
     try { data = JSON.parse(raw); } catch { return; }
 
-    // ── Rate limiting per connection ──
-    const now = Date.now();
-    if (now - ws.msgWindowStart > WS_MSG_WINDOW) {
-      ws.msgCount = 0;
-      ws.msgWindowStart = now;
-    }
-    ws.msgCount++;
-    if (ws.msgCount > WS_MSG_LIMIT) {
-      // Silent drop — don't inform the spammer
-      return;
-    }
-
-    // ── Auth ────────────────────────────────────────────────
     if (data.type === 'auth') {
       try {
         const user = jwt.verify(data.token, JWT_SECRET);
         const result = await pool.query('SELECT avatar FROM users WHERE id=$1', [user.id]);
-        if (!result.rows[0]) throw new Error('User not found');
-        const avatar = result.rows[0].avatar || null;
+        const avatar = result.rows[0]?.avatar || null;
 
-        clearTimeout(authTimeout);
-        ws.isAuthed = true;
-
-        // Kick existing session for same user
+        // ── Kick existing session for same user (prevents ghost WS) ──
         for (const [existingWs, existingUser] of onlineUsers) {
           if (existingUser.username === user.username && existingWs !== ws) {
             sendTo(existingWs, { type: 'kicked', reason: 'New session opened' });
@@ -466,59 +319,57 @@ wss.on('connection', (ws, req) => {
           id: user.id, username: user.username, color: user.color,
           avatar, channel: 'общий', voiceChannel: null
         });
-
+        // Load friends from DB
         const friendsResult = await pool.query(`
           SELECT u.username, u.color, u.avatar FROM users u
           JOIN friends f ON (f.user1_id = u.id OR f.user2_id = u.id)
           WHERE (f.user1_id = $1 OR f.user2_id = $1) AND u.id != $1
         `, [user.id]);
-
+        const friendsList = friendsResult.rows.map(f => ({
+          username: f.username, color: f.color, avatar: f.avatar || null
+        }));
         sendTo(ws, {
           type: 'welcome',
           username: user.username,
           color: user.color,
           avatar,
-          friends: friendsResult.rows.map(f => ({ username: f.username, color: f.color, avatar: f.avatar || null })),
+          friends: friendsList,
           history: channels['общий'].slice(-50),
           voiceChannels: getVoiceChannelList()
         });
         broadcast({ type: 'user_joined', username: user.username, color: user.color, avatar, users: getUserList() });
         broadcast({ type: 'system', text: `${user.username} зашёл в сеть`, channel: 'общий' });
       } catch(e) {
-        console.error('auth error:', e.message);
+        console.error('auth error', e);
         sendTo(ws, { type: 'auth_error', error: 'Неверный токен' });
-        ws.terminate();
+        ws.close();
       }
       return;
     }
 
-    // ── All other messages require auth ─────────────────────
     const user = onlineUsers.get(ws);
     if (!user) return;
 
     switch (data.type) {
-
-      case 'ping': break; // keepalive
-
       case 'message': {
         const ch = data.channel || user.channel;
         if (!data.text || typeof data.text !== 'string') break;
-        const text = sanitizeText(data.text);
-        if (!text || text.length > 4000) break;
-        if (!channels[ch]) break; // only allow existing channels
+        if (data.text.length > 4000) break; // server-side length guard
         const msg = {
           type: 'message',
           id: Date.now() + Math.random(),
           username: user.username,
           color: user.color,
           avatar: user.avatar || null,
-          text,
+          text: data.text,
           channel: ch,
           time: new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })
         };
+        if (!channels[ch]) channels[ch] = [];
         channels[ch].push(msg);
         if (channels[ch].length > 200) channels[ch].shift();
         broadcast(msg);
+        // Save to DB
         pool.query(
           `INSERT INTO messages (msg_id, channel, username, color, avatar, text, time) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING`,
           [String(msg.id), ch, msg.username, msg.color, msg.avatar || null, msg.text, msg.time]
@@ -528,9 +379,7 @@ wss.on('connection', (ws, req) => {
 
       case 'dm': {
         if (!data.text || typeof data.text !== 'string') break;
-        const text = sanitizeText(data.text);
-        if (!text || text.length > 4000) break;
-        if (!data.to || typeof data.to !== 'string') break;
+        if (data.text.length > 4000) break;
         const recipientWs = findWsByUsername(data.to);
         const key = dmKey(user.username, data.to);
         const msg = {
@@ -540,15 +389,16 @@ wss.on('connection', (ws, req) => {
           fromColor: user.color,
           fromAvatar: user.avatar || null,
           to: data.to,
-          text,
+          text: data.text,
           time: new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })
         };
         if (!dmHistory.has(key)) dmHistory.set(key, []);
         const hist = dmHistory.get(key);
         hist.push(msg);
-        if (hist.length > 200) hist.shift();
+        if (hist.length > 200) hist.shift(); // cap DM history in memory
         sendTo(ws, msg);
         if (recipientWs) sendTo(recipientWs, msg);
+        // Save to DB
         pool.query(
           `INSERT INTO dm_messages (msg_id, from_user, to_user, from_color, from_avatar, text, time) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING`,
           [String(msg.id), msg.from, msg.to, msg.fromColor, msg.fromAvatar || null, msg.text, msg.time]
@@ -557,56 +407,51 @@ wss.on('connection', (ws, req) => {
       }
 
       case 'dm_history': {
-        if (!data.withUsername || typeof data.withUsername !== 'string') break;
         const key = dmKey(user.username, data.withUsername);
         sendTo(ws, { type: 'dm_history', withUsername: data.withUsername, history: (dmHistory.get(key) || []).slice(-50) });
         break;
       }
 
       case 'switch_channel': {
-        if (!channels[data.channel]) break; // only allow valid channels
         user.channel = data.channel;
         broadcast({ type: 'users', users: getUserList() });
-        sendTo(ws, { type: 'channel_history', channel: data.channel, history: (channels[data.channel] || []).slice(-50) });
+        sendTo(ws, {
+          type: 'channel_history',
+          channel: data.channel,
+          history: (channels[data.channel] || []).slice(-50)
+        });
         break;
       }
 
       case 'edit_message': {
         const ch = data.channel || user.channel;
-        const text = sanitizeText(data.text || '');
-        if (!text || text.length > 4000) break;
         if (channels[ch]) {
           const m = channels[ch].find(m => String(m.id) === String(data.msgId));
-          // Only the author can edit their own message
           if (m && m.username === user.username) {
-            m.text = text;
+            m.text = data.text;
             m.edited = true;
-          } else if (m && m.username !== user.username) {
-            break; // silently reject edits from non-authors
           }
         }
-        broadcast({ type: 'edit_message', msgId: data.msgId, text });
-        pool.query(`UPDATE messages SET text=$1, edited=TRUE WHERE msg_id=$2 AND username=$3`, [text, String(data.msgId), user.username]).catch(console.error);
-        pool.query(`UPDATE dm_messages SET text=$1 WHERE msg_id=$2 AND from_user=$3`, [text, String(data.msgId), user.username]).catch(console.error);
+        broadcast({ type: 'edit_message', msgId: data.msgId, text: data.text });
+        pool.query(`UPDATE messages SET text=$1, edited=TRUE WHERE msg_id=$2`, [data.text, String(data.msgId)]).catch(console.error);
+        pool.query(`UPDATE dm_messages SET text=$1 WHERE msg_id=$2`, [data.text, String(data.msgId)]).catch(console.error);
         break;
       }
 
       case 'delete_message': {
-        // Only author can delete — enforce on server
+        // Удаляем из истории канала если есть
         if (data.channel && channels[data.channel]) {
-          const msg = channels[data.channel].find(m => String(m.id) === String(data.msgId));
-          if (msg && msg.username !== user.username) break;
           channels[data.channel] = channels[data.channel].filter(m => String(m.id) !== String(data.msgId));
         }
+        // Рассылаем всем чтобы удалили у себя
         broadcast({ type: 'delete_message', msgId: data.msgId });
-        pool.query(`DELETE FROM messages WHERE msg_id=$1 AND username=$2`, [String(data.msgId), user.username]).catch(console.error);
-        pool.query(`DELETE FROM dm_messages WHERE msg_id=$1 AND from_user=$2`, [String(data.msgId), user.username]).catch(console.error);
+        pool.query(`DELETE FROM messages WHERE msg_id=$1`, [String(data.msgId)]).catch(console.error);
+        pool.query(`DELETE FROM dm_messages WHERE msg_id=$1`, [String(data.msgId)]).catch(console.error);
         break;
       }
 
       case 'typing': {
         if (data.dm) {
-          if (!data.to || typeof data.to !== 'string') break;
           const recipientWs = findWsByUsername(data.to);
           if (recipientWs) sendTo(recipientWs, { type: 'dm_typing', from: user.username });
         } else {
@@ -616,31 +461,35 @@ wss.on('connection', (ws, req) => {
       }
 
       case 'friend_request_send': {
-        if (!data.toUsername || typeof data.toUsername !== 'string') break;
-        if (data.toUsername === user.username) break; // can't friend yourself
         const targetWs = findWsByUsername(data.toUsername);
-        if (targetWs) sendTo(targetWs, { type: 'friend_request', from: user.username, fromColor: user.color });
+        if (targetWs) {
+          sendTo(targetWs, { type: 'friend_request', from: user.username, fromColor: user.color });
+        }
         break;
       }
 
       case 'friend_accept': {
-        if (!data.toUsername || typeof data.toUsername !== 'string') break;
         const requesterWs = findWsByUsername(data.toUsername);
-        if (requesterWs) sendTo(requesterWs, { type: 'friend_accepted', username: user.username, color: user.color });
+        if (requesterWs) {
+          sendTo(requesterWs, { type: 'friend_accepted', username: user.username, color: user.color });
+        }
+        // Save friendship to DB
         try {
           const r1 = await pool.query('SELECT id FROM users WHERE username=$1', [user.username]);
           const r2 = await pool.query('SELECT id FROM users WHERE username=$1', [data.toUsername]);
           if (r1.rows[0] && r2.rows[0]) {
             const id1 = Math.min(r1.rows[0].id, r2.rows[0].id);
             const id2 = Math.max(r1.rows[0].id, r2.rows[0].id);
-            await pool.query('INSERT INTO friends (user1_id, user2_id) VALUES ($1,$2) ON CONFLICT DO NOTHING', [id1, id2]);
+            await pool.query(
+              'INSERT INTO friends (user1_id, user2_id) VALUES ($1,$2) ON CONFLICT DO NOTHING',
+              [id1, id2]
+            );
           }
-        } catch(e) { console.error('friend save error:', e.message); }
+        } catch(e) { console.error('friend save error', e); }
         break;
       }
 
       case 'friend_remove': {
-        if (!data.toUsername || typeof data.toUsername !== 'string') break;
         try {
           const r1 = await pool.query('SELECT id FROM users WHERE username=$1', [user.username]);
           const r2 = await pool.query('SELECT id FROM users WHERE username=$1', [data.toUsername]);
@@ -649,7 +498,7 @@ wss.on('connection', (ws, req) => {
             const id2 = Math.max(r1.rows[0].id, r2.rows[0].id);
             await pool.query('DELETE FROM friends WHERE user1_id=$1 AND user2_id=$2', [id1, id2]);
           }
-        } catch(e) { console.error('friend remove error:', e.message); }
+        } catch(e) { console.error('friend remove error', e); }
         break;
       }
 
@@ -661,25 +510,29 @@ wss.on('connection', (ws, req) => {
       case 'call_offer':
       case 'call_answer':
       case 'call_ice': {
-        if (!data.to || typeof data.to !== 'string') break;
         const targetWs = findWsByUsername(data.to);
-        if (targetWs) sendTo(targetWs, { ...data, from: user.username, fromColor: user.color, fromAvatar: user.avatar || null });
+        if (targetWs) {
+          sendTo(targetWs, { ...data, from: user.username, fromColor: user.color, fromAvatar: user.avatar || null });
+        }
         break;
       }
 
       // ── GROUP CALL ──────────────────────────────────────────
       case 'group_call_create': {
-        const roomId  = data.roomId;
+        // Инициатор создаёт комнату и приглашает всех
+        const roomId = data.roomId;
         const invitees = Array.isArray(data.invitees) ? data.invitees.slice(0, 7) : [];
-        if (!roomId || typeof roomId !== 'string') break;
+        if (!roomId) break;
         const room = { members: new Set([user.username]), soloTimer: null };
         groupCallRooms.set(roomId, room);
         invitees.forEach(username => {
-          if (typeof username !== 'string') return;
           const tWs = findWsByUsername(username);
           if (tWs) sendTo(tWs, {
-            type: 'group_call_invite', roomId, from: user.username,
-            fromColor: user.color, fromAvatar: user.avatar || null,
+            type: 'group_call_invite',
+            roomId,
+            from: user.username,
+            fromColor: user.color,
+            fromAvatar: user.avatar || null,
             invitees: [user.username, ...invitees]
           });
         });
@@ -688,16 +541,25 @@ wss.on('connection', (ws, req) => {
 
       case 'group_call_accept': {
         const roomId = data.roomId;
-        if (!roomId || typeof roomId !== 'string') break;
         const room = groupCallRooms.get(roomId);
         if (!room) break;
+        // Отменяем solo timer если он был
         if (room.soloTimer) { clearTimeout(room.soloTimer); room.soloTimer = null; }
+        const wasAlone = room.members.size === 0;
         room.members.add(user.username);
+        // Уведомляем всех участников в комнате что пришёл новый
         room.members.forEach(memberName => {
           if (memberName === user.username) return;
           const mWs = findWsByUsername(memberName);
-          if (mWs) sendTo(mWs, { type: 'group_call_peer_joined', roomId, username: user.username, color: user.color, avatar: user.avatar || null });
+          if (mWs) sendTo(mWs, {
+            type: 'group_call_peer_joined',
+            roomId,
+            username: user.username,
+            color: user.color,
+            avatar: user.avatar || null
+          });
         });
+        // Новому участнику отдаём список текущих участников для WebRTC
         const existingMembers = Array.from(room.members)
           .filter(u => u !== user.username)
           .map(u => {
@@ -709,27 +571,31 @@ wss.on('connection', (ws, req) => {
       }
 
       case 'group_call_decline': {
-        if (!data.roomId || typeof data.to !== 'string') break;
+        const roomId = data.roomId;
         const targetWs = findWsByUsername(data.to);
-        if (targetWs) sendTo(targetWs, { type: 'group_call_decline', roomId: data.roomId, from: user.username });
+        if (targetWs) sendTo(targetWs, { type: 'group_call_decline', roomId, from: user.username });
         break;
       }
 
       case 'group_call_leave': {
         const roomId = data.roomId;
-        if (!roomId) break;
         const room = groupCallRooms.get(roomId);
         if (!room) break;
         room.members.delete(user.username);
+        // Уведомляем оставшихся
         room.members.forEach(memberName => {
           const mWs = findWsByUsername(memberName);
           if (mWs) sendTo(mWs, { type: 'group_call_peer_left', roomId, username: user.username });
         });
+        // Если остался 1 человек — запускаем 30сек solo timer
         if (room.members.size === 1) {
           if (room.soloTimer) clearTimeout(room.soloTimer);
           room.soloTimer = setTimeout(() => {
             const lastMember = Array.from(room.members)[0];
-            if (lastMember) { const lWs = findWsByUsername(lastMember); if (lWs) sendTo(lWs, { type: 'group_call_solo_timeout', roomId }); }
+            if (lastMember) {
+              const lWs = findWsByUsername(lastMember);
+              if (lWs) sendTo(lWs, { type: 'group_call_solo_timeout', roomId });
+            }
             groupCallRooms.delete(roomId);
           }, 30000);
         } else if (room.members.size === 0) {
@@ -742,7 +608,6 @@ wss.on('connection', (ws, req) => {
       case 'group_call_offer':
       case 'group_call_answer':
       case 'group_call_ice': {
-        if (!data.to || typeof data.to !== 'string') break;
         const targetWs = findWsByUsername(data.to);
         if (targetWs) sendTo(targetWs, { ...data, from: user.username });
         break;
@@ -757,18 +622,26 @@ wss.on('connection', (ws, req) => {
         if (!voiceChannels[vch]) break;
         user.voiceChannel = vch;
         voiceChannels[vch].add(user.username);
+
         const existingMembers = Array.from(voiceChannels[vch]).filter(u => u !== user.username);
         existingMembers.forEach(memberName => {
           const memberWs = findWsByUsername(memberName);
-          if (memberWs) sendTo(memberWs, { type: 'voice_peer_joined', username: user.username, color: user.color, avatar: user.avatar || null, channel: vch });
+          if (memberWs) {
+            sendTo(memberWs, { type: 'voice_peer_joined', username: user.username, color: user.color, avatar: user.avatar || null, channel: vch });
+          }
         });
+
         sendTo(ws, {
-          type: 'voice_joined', channel: vch,
-          members: Array.from(voiceChannels[vch]).filter(u => u !== user.username).map(u => {
-            const ud = Array.from(onlineUsers.values()).find(x => x.username === u);
-            return { username: u, color: ud ? ud.color : '#4af0c0', avatar: ud ? ud.avatar || null : null };
-          })
+          type: 'voice_joined',
+          channel: vch,
+          members: Array.from(voiceChannels[vch])
+            .filter(u => u !== user.username)
+            .map(u => {
+              const ud = Array.from(onlineUsers.values()).find(x => x.username === u);
+              return { username: u, color: ud ? ud.color : '#4af0c0', avatar: ud ? ud.avatar || null : null };
+            })
         });
+
         broadcastVoiceState();
         broadcast({ type: 'users', users: getUserList() });
         break;
@@ -791,22 +664,23 @@ wss.on('connection', (ws, req) => {
       case 'voice_offer':
       case 'voice_answer':
       case 'voice_ice': {
-        if (!data.to || typeof data.to !== 'string') break;
         const targetWs = findWsByUsername(data.to);
-        if (targetWs) sendTo(targetWs, { ...data, from: user.username });
+        if (targetWs) {
+          sendTo(targetWs, { ...data, from: user.username });
+        }
         break;
       }
 
       case 'read_receipt': {
-        if (!data.to || typeof data.to !== 'string') break;
         const targetWs = findWsByUsername(data.to);
-        if (targetWs) sendTo(targetWs, { type: 'read_receipt', msgId: data.msgId });
+        if (targetWs) sendTo(targetWs, { type:'read_receipt', msgId: data.msgId });
         break;
       }
 
       case 'reaction': {
+        // Broadcast to channel or DM peer
         const reactionMsg = { ...data, from: user.username };
-        if (data.dm && data.to && typeof data.to === 'string') {
+        if (data.dm && data.to) {
           const targetWs = findWsByUsername(data.to);
           if (targetWs) sendTo(targetWs, reactionMsg);
         } else {
@@ -818,7 +692,6 @@ wss.on('connection', (ws, req) => {
   });
 
   ws.on('close', () => {
-    clearTimeout(authTimeout);
     const user = onlineUsers.get(ws);
     if (user) {
       if (user.voiceChannel && voiceChannels[user.voiceChannel]) {
@@ -829,6 +702,7 @@ wss.on('connection', (ws, req) => {
         });
         broadcastVoiceState();
       }
+      // Clean up group call rooms
       groupCallRooms.forEach((room, roomId) => {
         if (!room.members.has(user.username)) return;
         room.members.delete(user.username);
