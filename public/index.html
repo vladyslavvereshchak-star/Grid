@@ -2640,6 +2640,12 @@ input[type=range]:focus{outline:none}
           </div>
         </div>
         <div style="margin-top:18px;padding-top:18px;border-top:1px solid var(--border)">
+          <div class="modal-section-title">Change Username</div>
+          <input class="field" id="new-username-input" type="text" placeholder="New username (3-30 chars)" style="margin-bottom:8px"/>
+          <div id="change-username-error" style="color:#f05a5a;font-size:10px;margin:6px 0;min-height:14px"></div>
+          <button class="lang-btn active" onclick="changeUsername()">Update Username</button>
+        </div>
+        <div style="margin-top:18px;padding-top:18px;border-top:1px solid var(--border)">
           <div class="modal-section-title">Change Password</div>
           <input class="field" id="new-password-input" type="password" placeholder="New password (min. 6 chars)" style="margin-bottom:8px"/>
           <input class="field" id="new-password-confirm" type="password" placeholder="Confirm password"/>
@@ -3468,6 +3474,11 @@ function handleMsg(data) {
           }
           loadAvatar();
         }
+        // Keep friends list avatar in sync and refresh sidebars
+        if (friends[data.username]) {
+          friends[data.username].avatar = data.avatar || null;
+          renderFriendsPanel(); renderDmList();
+        }
         break;
       }
       case 'user_joined':
@@ -3526,7 +3537,7 @@ function handleMsg(data) {
       break;
 
     case 'friend_accepted':
-      friends[data.username] = { name: data.username, username: data.username, color: data.color, online: true };
+      friends[data.username] = { name: data.username, username: data.username, color: data.color, avatar: avatarCache.get(data.username) || null, online: true };
       renderFriendsPanel(); renderDmList();
       showNotif(`${data.username} accepted!`, 'blue');
       break;
@@ -5573,7 +5584,7 @@ function renderPendingRequests() {
 function acceptPendingReq(idx) {
   const req = pendingRequests[idx];
   if (!req) return;
-  friends[req.username] = { name: req.username, username: req.username, color: req.color, online: true };
+  friends[req.username] = { name: req.username, username: req.username, color: req.color, avatar: avatarCache.get(req.username) || null, online: true };
   ws.send(JSON.stringify({ type: 'friend_accept', toUsername: req.username }));
   pendingRequests.splice(idx, 1);
   renderPendingRequests();
@@ -5688,7 +5699,7 @@ function sendFriendRequest(tag, color) {
 function acceptFriend() {
   // Legacy popup path — now handled by acceptPendingReq()
   if (!pendingRequest) return;
-  friends[pendingRequest.username] = { name:pendingRequest.name, username:pendingRequest.username, color:pendingRequest.color, online:true };
+  friends[pendingRequest.username] = { name:pendingRequest.name, username:pendingRequest.username, color:pendingRequest.color, avatar: avatarCache.get(pendingRequest.username) || null, online:true };
   ws.send(JSON.stringify({ type:'friend_accept', toUsername:pendingRequest.username }));
   document.getElementById('friend-req').classList.remove('show');
   renderFriendsPanel(); renderDmList();
@@ -5724,7 +5735,7 @@ function renderFriendsPanel() {
     div.className = 'friend-card';
     div.onclick = () => openDm(tag);
     div.innerHTML = `
-      <div class="friend-card-av" style="background:${colorToBg(f.color)};color:${f.color}">${f.name[0].toUpperCase()}</div>
+      <div class="friend-card-av" style="${avStyle(f.color, f.avatar, f.name)}">${avHtml(f.name, f.color, f.avatar)}</div>
       <div style="flex:1;min-width:0">
         <div class="friend-card-name">${esc(f.name)}</div>
         <div class="friend-card-status ${f.online?'online':'offline'}">${f.online?'online':'offline'}</div>
@@ -5747,7 +5758,7 @@ function renderDmList() {
     div.dataset.tag = tag;
     div.onclick = () => openDm(tag);
     div.innerHTML = `
-      <div class="dm-av ${f.online?'':'offline'}" style="background:${colorToBg(f.color)};color:${f.color}">${f.name[0].toUpperCase()}</div>
+      <div class="dm-av ${f.online?'':'offline'}" style="${avStyle(f.color, f.avatar, f.name)}">${avHtml(f.name, f.color, f.avatar)}</div>
       <div class="dm-info">
         <div class="dm-name">${esc(f.name)}</div>
         <div class="dm-status ${f.online?'online':''}">${f.online?'Active':'Offline'}</div>
@@ -5937,6 +5948,38 @@ function logout() {
   localStorage.removeItem('grid_color');
   if (ws) ws.close();
   location.reload();
+}
+
+async function changeUsername() {
+  const newName = document.getElementById('new-username-input').value.trim();
+  const err = document.getElementById('change-username-error');
+  if (!/^[a-zA-Z0-9_\-а-яА-ЯёЁ]{3,30}$/.test(newName)) {
+    err.textContent = '3-30 chars, letters/numbers/_/- only'; return;
+  }
+  err.textContent = '';
+  try {
+    const token = localStorage.getItem('grid_token');
+    const res = await fetch('/api/username', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ username: newName })
+    });
+    const data = await res.json();
+    if (!res.ok) { err.textContent = data.error || 'Error'; return; }
+    // Update local state + token, then reconnect WS with fresh identity
+    localStorage.setItem('grid_token', data.token);
+    localStorage.setItem('grid_username', data.username);
+    me.name = data.username;
+    updateMyProfile();
+    err.style.color = 'var(--accent)';
+    err.textContent = 'Username updated — reconnecting...';
+    document.getElementById('new-username-input').value = '';
+    setTimeout(() => {
+      err.textContent = ''; err.style.color = '#f05a5a';
+      if (ws) ws.close();
+      connect(data.token);
+    }, 1200);
+  } catch(e) { err.textContent = 'Connection error'; }
 }
 
 async function changePassword() {
