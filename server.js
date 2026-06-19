@@ -17,10 +17,10 @@ const { Pool } = require('pg');
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server, maxPayload: 70 * 1024 * 1024 });
+const wss = new WebSocket.Server({ server, maxPayload: 1 * 1024 * 1024 }); // 1MB max (avatars are base64, biggest payload)
 
 app.use(express.static(path.join(__dirname, 'public')));
-app.use(express.json({ limit: '70mb' }));
+app.use(express.json({ limit: '1mb' }));
 
 const JWT_SECRET = process.env.JWT_SECRET || 'grid-secret-key-change-in-prod';
 if (!process.env.JWT_SECRET) console.warn('⚠️  JWT_SECRET not set in env!');
@@ -127,8 +127,10 @@ initDB().catch(console.error);
 app.post('/api/register', authLimiter.middleware(), async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Введи логин и пароль' });
-  if (username.length < 3) return res.status(400).json({ error: 'Логин минимум 3 символа' });
-  if (password.length < 6) return res.status(400).json({ error: 'Пароль минимум 6 символов' });
+  if (typeof username !== 'string' || !/^[a-zA-Z0-9_\-а-яА-ЯёЁ]{3,30}$/.test(username))
+    return res.status(400).json({ error: 'Логин: 3–30 символов, только буквы/цифры/_ и -' });
+  if (typeof password !== 'string' || password.length < 6 || password.length > 128)
+    return res.status(400).json({ error: 'Пароль: 6–128 символов' });
 
   try {
     const colors = ['#4af0c0','#6ab4ff','#f0b44a','#c084fc','#f06a8a','#7af06a'];
@@ -139,7 +141,7 @@ app.post('/api/register', authLimiter.middleware(), async (req, res) => {
       [username, hash, color]
     );
     const user = result.rows[0];
-    const token = jwt.sign({ id: user.id, username: user.username, color: user.color }, JWT_SECRET);
+    const token = jwt.sign({ id: user.id, username: user.username, color: user.color }, JWT_SECRET, { expiresIn: '30d' });
     res.json({ token, username: user.username, color: user.color });
   } catch (e) {
     if (e.code === '23505') return res.status(400).json({ error: 'Такой логин уже занят' });
@@ -167,7 +169,7 @@ app.post('/api/login', authLimiter.middleware(), async (req, res) => {
   }
 });
 
-app.post('/api/change-password', async (req, res) => {
+app.post('/api/change-password', profileLimiter.middleware(), async (req, res) => {
   const auth = req.headers.authorization;
   if (!auth) return res.status(401).json({ error: 'Нет токена' });
   try {
@@ -182,7 +184,7 @@ app.post('/api/change-password', async (req, res) => {
   }
 });
 
-app.post('/api/avatar', async (req, res) => {
+app.post('/api/avatar', profileLimiter.middleware(), async (req, res) => {
   const auth = req.headers.authorization;
   if (!auth) return res.status(401).json({ error: 'Нет токена' });
   try {
@@ -190,7 +192,8 @@ app.post('/api/avatar', async (req, res) => {
     const { avatar } = req.body;
 
     if (avatar !== null && avatar !== undefined) {
-      if (!avatar.startsWith('data:image/')) return res.status(400).json({ error: 'Invalid image format' });
+      if (typeof avatar !== 'string' || !/^data:image\/(jpeg|jpg|png|webp|gif);base64,/.test(avatar))
+        return res.status(400).json({ error: 'Invalid image format' });
       if (avatar.length > 200000) return res.status(400).json({ error: 'Image too large' });
     }
 
@@ -345,18 +348,36 @@ function broadcastVoiceState() {
 }
 
 wss.on('connection', (ws, req) => {
-  ws.isAlive = true;
+  ws.isAlive  = true;
+  ws.isAuthed = false;
+  ws.msgCount = 0;
+  ws.msgWindowStart = Date.now();
   ws.on('pong', () => { ws.isAlive = true; });
 
+  // ── Close unauthenticated connections after 10s ──
+  const authTimeout = setTimeout(() => {
+    if (!ws.isAuthed) { try { ws.terminate(); } catch(e){} }
+  }, 10000);
+
   ws.on('message', async (raw) => {
+    if (raw.length > 512 * 1024) return; // 512KB per-message guard
     let data;
     try { data = JSON.parse(raw); } catch { return; }
+
+    // ── Per-connection rate limit: 30 msgs / 5s ──
+    const now = Date.now();
+    if (now - ws.msgWindowStart > 5000) { ws.msgCount = 0; ws.msgWindowStart = now; }
+    ws.msgCount++;
+    if (ws.msgCount > 30) return; // silent drop
 
     if (data.type === 'auth') {
       try {
         const user = jwt.verify(data.token, JWT_SECRET);
         const result = await pool.query('SELECT avatar FROM users WHERE id=$1', [user.id]);
-        const avatar = result.rows[0]?.avatar || null;
+        if (!result.rows[0]) throw new Error('user not found');
+        const avatar = result.rows[0].avatar || null;
+        clearTimeout(authTimeout);
+        ws.isAuthed = true;
 
         // ── Kick existing session for same user (prevents ghost WS) ──
         for (const [existingWs, existingUser] of onlineUsers) {
@@ -415,7 +436,9 @@ wss.on('connection', (ws, req) => {
       case 'message': {
         const ch = data.channel || user.channel;
         if (!data.text || typeof data.text !== 'string') break;
-        if (data.text.length > 4000) break;
+        const text = sanitizeText(data.text);
+        if (!text || text.length > 4000) break;
+        if (!channels[ch]) break; // only allow existing channels
         // Admin enforcement: frozen users can't send
         if (frozenUsers.has(user.username)) {
           sendTo(ws, { type: 'admin_action', action: 'freeze_blocked', msg: '❄️ You are frozen. Wait for unfreeze.' });
@@ -436,7 +459,7 @@ wss.on('connection', (ws, req) => {
           username: user.username,
           color: user.color,
           avatar: user.avatar || null,
-          text: data.text,
+          text,
           channel: ch,
           time: new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })
         };
@@ -454,7 +477,9 @@ wss.on('connection', (ws, req) => {
 
       case 'dm': {
         if (!data.text || typeof data.text !== 'string') break;
-        if (data.text.length > 4000) break;
+        const text = sanitizeText(data.text);
+        if (!text || text.length > 4000) break;
+        if (!data.to || typeof data.to !== 'string') break;
         const recipientWs = findWsByUsername(data.to);
         const key = dmKey(user.username, data.to);
         const msg = {
@@ -464,7 +489,7 @@ wss.on('connection', (ws, req) => {
           fromColor: user.color,
           fromAvatar: user.avatar || null,
           to: data.to,
-          text: data.text,
+          text,
           time: new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })
         };
         if (!dmHistory.has(key)) dmHistory.set(key, []);
@@ -482,12 +507,14 @@ wss.on('connection', (ws, req) => {
       }
 
       case 'dm_history': {
+        if (typeof data.withUsername !== 'string') break;
         const key = dmKey(user.username, data.withUsername);
         sendTo(ws, { type: 'dm_history', withUsername: data.withUsername, history: (dmHistory.get(key) || []).slice(-50) });
         break;
       }
 
       case 'switch_channel': {
+        if (typeof data.channel !== 'string' || !channels[data.channel]) break;
         user.channel = data.channel;
         broadcast({ type: 'users', users: getUserList() });
         sendTo(ws, {
@@ -500,28 +527,48 @@ wss.on('connection', (ws, req) => {
 
       case 'edit_message': {
         const ch = data.channel || user.channel;
+        const text = sanitizeText(data.text || '');
+        if (!text || text.length > 4000) break;
+        let allowed = false;
         if (channels[ch]) {
           const m = channels[ch].find(m => String(m.id) === String(data.msgId));
-          if (m && m.username === user.username) {
-            m.text = data.text;
-            m.edited = true;
-          }
+          if (m && m.username === user.username) { m.text = text; m.edited = true; allowed = true; }
         }
-        broadcast({ type: 'edit_message', msgId: data.msgId, text: data.text });
-        pool.query(`UPDATE messages SET text=$1, edited=TRUE WHERE msg_id=$2`, [data.text, String(data.msgId)]).catch(console.error);
-        pool.query(`UPDATE dm_messages SET text=$1 WHERE msg_id=$2`, [data.text, String(data.msgId)]).catch(console.error);
+        if (!allowed) {
+          // Could be a DM — check DM history ownership before allowing broadcast
+          let foundInDm = false;
+          for (const hist of dmHistory.values()) {
+            const m = hist.find(m => String(m.id) === String(data.msgId));
+            if (m) { foundInDm = true; if (m.from === user.username) { m.text = text; allowed = true; } break; }
+          }
+          if (!foundInDm) break; // unknown message, reject
+        }
+        if (!allowed) break; // not the author — reject silently
+        broadcast({ type: 'edit_message', msgId: data.msgId, text });
+        pool.query(`UPDATE messages SET text=$1, edited=TRUE WHERE msg_id=$2 AND username=$3`, [text, String(data.msgId), user.username]).catch(console.error);
+        pool.query(`UPDATE dm_messages SET text=$1 WHERE msg_id=$2 AND from_user=$3`, [text, String(data.msgId), user.username]).catch(console.error);
         break;
       }
 
       case 'delete_message': {
-        // Удаляем из истории канала если есть
+        let allowed = false;
         if (data.channel && channels[data.channel]) {
-          channels[data.channel] = channels[data.channel].filter(m => String(m.id) !== String(data.msgId));
+          const msg = channels[data.channel].find(m => String(m.id) === String(data.msgId));
+          if (msg) {
+            if (msg.username === user.username) {
+              channels[data.channel] = channels[data.channel].filter(m => String(m.id) !== String(data.msgId));
+              allowed = true;
+            }
+          } else {
+            allowed = true; // not in memory (old message) — let DB constraint enforce ownership
+          }
+        } else {
+          allowed = true; // DM message — DB constraint enforces ownership below
         }
-        // Рассылаем всем чтобы удалили у себя
+        if (!allowed) break;
         broadcast({ type: 'delete_message', msgId: data.msgId });
-        pool.query(`DELETE FROM messages WHERE msg_id=$1`, [String(data.msgId)]).catch(console.error);
-        pool.query(`DELETE FROM dm_messages WHERE msg_id=$1`, [String(data.msgId)]).catch(console.error);
+        pool.query(`DELETE FROM messages WHERE msg_id=$1 AND username=$2`, [String(data.msgId), user.username]).catch(console.error);
+        pool.query(`DELETE FROM dm_messages WHERE msg_id=$1 AND from_user=$2`, [String(data.msgId), user.username]).catch(console.error);
         break;
       }
 
@@ -536,6 +583,7 @@ wss.on('connection', (ws, req) => {
       }
 
       case 'friend_request_send': {
+        if (typeof data.toUsername !== 'string' || data.toUsername === user.username) break;
         const targetWs = findWsByUsername(data.toUsername);
         if (targetWs) {
           sendTo(targetWs, { type: 'friend_request', from: user.username, fromColor: user.color });
@@ -594,10 +642,9 @@ wss.on('connection', (ws, req) => {
 
       // ── GROUP CALL ──────────────────────────────────────────
       case 'group_call_create': {
-        // Инициатор создаёт комнату и приглашает всех
         const roomId = data.roomId;
-        const invitees = Array.isArray(data.invitees) ? data.invitees.slice(0, 7) : [];
-        if (!roomId) break;
+        const invitees = Array.isArray(data.invitees) ? data.invitees.filter(u => typeof u === 'string').slice(0, 7) : [];
+        if (!roomId || typeof roomId !== 'string') break;
         const room = { members: new Set([user.username]), soloTimer: null };
         groupCallRooms.set(roomId, room);
         invitees.forEach(username => {
@@ -872,6 +919,7 @@ wss.on('connection', (ws, req) => {
   });
 
   ws.on('close', () => {
+    clearTimeout(authTimeout);
     const user = onlineUsers.get(ws);
     if (user) {
       if (user.voiceChannel && voiceChannels[user.voiceChannel]) {

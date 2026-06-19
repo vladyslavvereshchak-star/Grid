@@ -6616,16 +6616,21 @@ function renderMsgContent(text) {
   if (text.startsWith('__FILE__:')) {
     try {
       const payload = JSON.parse(text.slice(9));
-      if (payload.type && payload.type.startsWith('image/')) {
-        return `<img src="${payload.data}" class="msg-img-attach"
-          onclick="openLightbox('${payload.data.replace(/'/g,"\\'")}','${esc(payload.name)}')"
-          title="${esc(payload.name)}">`;
+      // Validate payload.data is actually a data: URI — prevents XSS via crafted src/href
+      const isValidDataUri = typeof payload.data === 'string' && /^data:[a-zA-Z0-9.\-+/]+;base64,[A-Za-z0-9+/=]+$/.test(payload.data);
+      if (!isValidDataUri) return esc(text); // fallback — render as plain text if malformed
+      const safeName = esc(payload.name || 'file');
+      const safeData = esc(payload.data); // escape for use inside HTML attributes
+      if (payload.type && typeof payload.type === 'string' && payload.type.startsWith('image/')) {
+        return `<img src="${safeData}" class="msg-img-attach"
+          onclick="openLightbox(this.src,'${safeName.replace(/'/g,"\\'")}')"
+          title="${safeName}">`;
       }
-      return `<a class="msg-file" href="${payload.data}" download="${payload.name}" target="_blank">
+      return `<a class="msg-file" href="${safeData}" download="${safeName}" target="_blank">
         <i class="ti ti-file msg-file-icon"></i>
         <div class="msg-file-info">
-          <span class="msg-file-name">${esc(payload.name)}</span>
-          <span class="msg-file-size">${payload.size}</span>
+          <span class="msg-file-name">${safeName}</span>
+          <span class="msg-file-size">${esc(payload.size || '')}</span>
         </div>
         <i class="ti ti-download" style="color:var(--text3);font-size:12px;margin-left:auto"></i>
       </a>`;
