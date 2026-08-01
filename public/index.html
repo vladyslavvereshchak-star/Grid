@@ -3072,25 +3072,24 @@ const ICE_CONFIG = {
   iceCandidatePoolSize: 10,
   iceTransportPolicy: 'all',
   iceServers: [
-    // Google STUN — максимально надёжные
+    // Google STUN
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
     // Cloudflare STUN
     { urls: 'stun:stun.cloudflare.com:3478' },
+    // Metered TURN (бесплатный тир — 50GB/месяц, работает)
+    {
+      urls: [
+        'turn:relay1.expressturn.com:3478',
+        'turn:relay1.expressturn.com:3478?transport=tcp',
+      ],
+      username: 'efVGPPGXN2WEXDMWBV',
+      credential: 'zLqOOp5GVtFJJU6R'
+    },
+    // Cloudflare TURN (требует аккаунт, но fallback)
     { urls: 'stun:stun.stunprotocol.org:3478' },
-    // TURN: openrelay.metered.ca (fallback когда прямое соединение невозможно)
-    { urls: 'turn:openrelay.metered.ca:80',
-      username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:80?transport=tcp',
-      username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443',
-      username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turns:openrelay.metered.ca:443',
-      username: 'openrelayproject', credential: 'openrelayproject' },
-    // Резервные TURN
+    // Резервный публичный TURN
     { urls: 'turn:freestun.net:3479',  username: 'free', credential: 'free' },
     { urls: 'turns:freestun.net:5350', username: 'free', credential: 'free' },
   ]
@@ -3352,6 +3351,11 @@ let _reconnectAttempts = 0;
 let _reconnectTimer = null;
 let _keepaliveTimer = null;
 
+// State saved across reconnects — so WS drop doesn't kick you out of DM
+let _savedNavMode  = null;
+let _savedDmWith   = null;
+let _savedDmMode   = false;
+
 function connect(token) {
   // Clear any existing keepalive
   if (_keepaliveTimer) { clearInterval(_keepaliveTimer); _keepaliveTimer = null; }
@@ -3373,6 +3377,10 @@ function connect(token) {
   ws.onclose = () => {
     setConnBadge('offline');
     if (_keepaliveTimer) { clearInterval(_keepaliveTimer); _keepaliveTimer = null; }
+    // Save current nav state so we can restore it after reconnect
+    _savedNavMode = navMode;
+    _savedDmWith  = dmWith;
+    _savedDmMode  = dmMode;
     if (callActive || callSolo) {
       setTimeout(() => {
         const wsGone = !ws || ws.readyState !== WebSocket.OPEN;
@@ -3428,10 +3436,31 @@ function handleMsg(data) {
         });
         renderFriendsPanel(); renderDmList();
       }
-      // Switch to server mode by default
-      setNavMode('server');
-      // Set chat header to current channel
-      updateChatHeader(me.channel);
+      // Restore nav state if this is a reconnect, otherwise default to server mode
+      if (_savedNavMode && _savedDmWith) {
+        // Reconnect — restore where user was
+        navMode  = _savedNavMode;
+        dmMode   = _savedDmMode;
+        dmWith   = _savedDmWith;
+        if (dmMode && dmWith) {
+          setNavMode('dm');
+          document.getElementById('ch-icon').className = 'ti ti-message chat-ch-icon';
+          document.getElementById('ch-name-display').textContent = dmWith.name || dmWith.username;
+          document.getElementById('ch-desc-display').textContent = '— direct message';
+          document.getElementById('call-btn').style.display = 'flex';
+          // Re-request DM history
+          if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'dm_history', withUsername: dmWith.username }));
+        } else {
+          setNavMode(_savedNavMode);
+          updateChatHeader(me.channel);
+        }
+        // Clear saved state after restoring
+        _savedNavMode = null; _savedDmWith = null; _savedDmMode = false;
+      } else {
+        // First load — default to server mode
+        setNavMode('server');
+        updateChatHeader(me.channel);
+      }
       break;
 
     case 'message': {
@@ -4712,6 +4741,27 @@ async function startCallWebRTC(peerUsername, isInitiator) {
 
   callPc.onicecandidate = (e) => {
     if (e.candidate) wsSend({ type: 'call_ice', to: peerUsername, candidate: e.candidate });
+  };
+
+  // Monitor ICE connection — log state changes for debugging
+  callPc.oniceconnectionstatechange = () => {
+    const s = callPc?.iceConnectionState;
+    console.log('[GRID ICE] iceConnectionState:', s);
+    if (s === 'failed') {
+      console.warn('[GRID ICE] ICE failed — attempting ICE restart');
+      if (isInitiator && callPc.signalingState === 'stable') {
+        callPc.restartIce();
+        callPc.createOffer({ iceRestart: true }).then(offer => {
+          offer.sdp = patchOpusSDP(offer.sdp);
+          return callPc.setLocalDescription(offer);
+        }).then(() => {
+          wsSend({ type: 'call_offer', to: peerUsername, sdp: callPc.localDescription });
+        }).catch(e => console.warn('[GRID ICE] ICE restart failed:', e));
+      }
+    }
+    if (s === 'disconnected') {
+      console.warn('[GRID ICE] ICE disconnected — waiting 5s before restart');
+    }
   };
 
   // ── Надёжное воспроизведение — fallback на любое взаимодействие ──
