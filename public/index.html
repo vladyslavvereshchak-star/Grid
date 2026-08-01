@@ -3350,6 +3350,7 @@ window.addEventListener('load', () => {
 let _reconnectAttempts = 0;
 let _reconnectTimer = null;
 let _keepaliveTimer = null;
+let _intentionalClose = false; // prevents reconnect when we close on purpose
 
 // State saved across reconnects — so WS drop doesn't kick you out of DM
 let _savedNavMode  = null;
@@ -3357,8 +3358,10 @@ let _savedDmWith   = null;
 let _savedDmMode   = false;
 
 function connect(token) {
+  if (!token) return;
   // Clear any existing keepalive
   if (_keepaliveTimer) { clearInterval(_keepaliveTimer); _keepaliveTimer = null; }
+  _intentionalClose = false;
 
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}`);
@@ -3374,9 +3377,11 @@ function connect(token) {
       }
     }, 25000);
   };
-  ws.onclose = () => {
+  ws.onclose = (e) => {
     setConnBadge('offline');
     if (_keepaliveTimer) { clearInterval(_keepaliveTimer); _keepaliveTimer = null; }
+    // Don't reconnect if we closed intentionally (logout, kicked, session_replaced)
+    if (_intentionalClose) return;
     // Save current nav state so we can restore it after reconnect
     _savedNavMode = navMode;
     _savedDmWith  = dmWith;
@@ -3692,6 +3697,32 @@ function handleMsg(data) {
 
     case 'admin_feedback':
       showNotif(data.msg, 'blue');
+      break;
+
+    case 'kicked':
+      // Banned or kicked by admin — clear token and go to login
+      _intentionalClose = true;
+      showNotif('⚡ ' + (data.reason || 'You were kicked'), 'red');
+      setTimeout(() => {
+        localStorage.removeItem('grid_token');
+        localStorage.removeItem('grid_username');
+        location.reload();
+      }, 2000);
+      break;
+
+    case 'session_replaced':
+      // Another tab/device opened — close silently, don't reconnect
+      _intentionalClose = true;
+      if (ws) { ws.onclose = null; ws.close(); }
+      showNotif('Session opened elsewhere', 'blue');
+      break;
+
+    case 'auth_error':
+      // Token invalid/expired — clear and go to login
+      _intentionalClose = true;
+      localStorage.removeItem('grid_token');
+      localStorage.removeItem('grid_username');
+      setTimeout(() => location.reload(), 500);
       break;
 
     case 'color_update': {
@@ -6063,6 +6094,7 @@ function switchTab(id, el) {
 }
 
 function logout() {
+  _intentionalClose = true;
   localStorage.removeItem('grid_token');
   localStorage.removeItem('grid_username');
   localStorage.removeItem('grid_color');

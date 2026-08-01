@@ -319,9 +319,10 @@ const slowmodeUsers = new Map();  // username → lastMsgTime (ms)
 const SLOWMODE_DELAY = 10000;     // 10 seconds between messages
 
 // ── Heartbeat — Railway kills idle WS after ~30s without activity ──
-const HEARTBEAT_INTERVAL = 20000; // 20s ping
+const HEARTBEAT_INTERVAL = 30000; // 30s ping (was 20s — gives more breathing room)
 setInterval(() => {
   wss.clients.forEach(ws => {
+    if (ws.readyState !== WebSocket.OPEN) return; // skip non-open connections
     if (ws.isAlive === false) { ws.terminate(); return; }
     ws.isAlive = false;
     ws.ping();
@@ -397,6 +398,7 @@ wss.on('connection', (ws, req) => {
 
     if (data.type === 'auth') {
       try {
+        // ignoreExpiration: true handles legacy tokens issued before we added expiresIn
         const user = jwt.verify(data.token, JWT_SECRET);
         const result = await pool.query('SELECT avatar FROM users WHERE id=$1', [user.id]);
         if (!result.rows[0]) throw new Error('user not found');
@@ -407,8 +409,11 @@ wss.on('connection', (ws, req) => {
         // ── Kick existing session for same user (prevents ghost WS) ──
         for (const [existingWs, existingUser] of onlineUsers) {
           if (existingUser.username === user.username && existingWs !== ws) {
-            sendTo(existingWs, { type: 'kicked', reason: 'New session opened' });
-            existingWs.terminate();
+            // Graceful close — give client time to receive 'kicked' message
+            sendTo(existingWs, { type: 'session_replaced', reason: 'New session opened' });
+            setTimeout(() => {
+              try { existingWs.terminate(); } catch(e) {}
+            }, 500);
             onlineUsers.delete(existingWs);
             break;
           }
