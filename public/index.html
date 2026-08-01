@@ -1929,9 +1929,16 @@ input[type=range]:focus{outline:none}
 
 @media(max-width:768px){
   body{overflow:auto;align-items:flex-start}
-  .grid-sub-panel{width:100%!important}
+  .grid-sub-panel{
+    position:fixed!important;left:56px!important;top:0;bottom:0;
+    width:calc(100vw - 56px)!important;
+    z-index:50;transition:transform 0.25s ease;
+  }
+  .grid-sub-panel.mobile-hidden{transform:translateX(-110%)!important}
+  .panel-chat{position:fixed!important;left:56px;right:0;top:0;bottom:0}
   .panel-profile{display:none}
   .grid-resizer{display:none}
+  #mobile-back-btn{display:flex!important}
 }
 @media(max-width:480px){
   .msg-text{font-size:11px}
@@ -2324,6 +2331,12 @@ input[type=range]:focus{outline:none}
 
 
     <div class="chat-header" id="chat-header">
+      <!-- Mobile back button — only shown at narrow width -->
+      <div id="mobile-back-btn" onclick="showMobileSidebar()"
+        style="display:none;width:28px;height:28px;align-items:center;justify-content:center;
+               cursor:pointer;color:var(--accent);font-size:16px;flex-shrink:0;margin-right:4px">
+        <i class="ti ti-arrow-left"></i>
+      </div>
       <i class="ti ti-hash chat-ch-icon" id="ch-icon"></i>
       <span class="chat-ch-name" id="ch-name-display">[ CORE ]</span>
       <span class="chat-ch-desc" id="ch-desc-display">— main channel</span>
@@ -3885,6 +3898,20 @@ function acceptIncomingCall() {
   const soloHint = document.getElementById('call-solo-hint');
   if (soloHint) soloHint.style.display = 'none';
   startCallTimer();
+
+  // Open DM with caller so chat-call-stage becomes visible
+  if (callPeer) {
+    if (friends[callPeer.username]) {
+      openDm(callPeer.username);
+    } else {
+      dmMode = true;
+      dmWith = { tag: callPeer.username, username: callPeer.username, name: callPeer.username, color: callPeer.color };
+      document.getElementById('ch-icon').className = 'ti ti-message chat-ch-icon';
+      document.getElementById('ch-name-display').textContent = callPeer.username;
+      document.getElementById('call-btn').style.display = 'flex';
+      updateCallPanelPlacement();
+    }
+  }
 
   const btn = document.getElementById('call-btn');
   btn.classList.add('in-call');
@@ -5658,6 +5685,7 @@ function switchChannel(chId) {
   unread[chId]=0;
   const serverChId = CH_SERVER_MAP[chId] || chId;
   if (ws&&ws.readyState===1) ws.send(JSON.stringify({ type:'switch_channel', channel: serverChId }));
+  if (window.innerWidth <= 768) hideMobileSidebar();
 }
 
 function openDm(tag) {
@@ -5677,6 +5705,8 @@ function openDm(tag) {
   updateSendBtn();
   dmUnread[tag]=0; renderDmList(); updateTabTitle();
   if (ws&&ws.readyState===1) ws.send(JSON.stringify({ type:'dm_history', withUsername:tag }));
+  // On narrow screens — hide sidebar so chat is visible
+  if (window.innerWidth <= 768) hideMobileSidebar();
 }
 
 // ── USERS ──
@@ -7612,6 +7642,164 @@ window.updateUserList = function(users) {
   window.onlineUsersList = users;
   _origUpdateUserList(users);
   if (adminPanelOpen) refreshAdminTargetList();
+};
+</script>
+<!-- ── MOBILE NAV HELPERS ── -->
+<script>
+function hideMobileSidebar() {
+  const sb = document.getElementById('grid-sub-panel');
+  if (sb) sb.classList.add('mobile-hidden');
+}
+function showMobileSidebar() {
+  const sb = document.getElementById('grid-sub-panel');
+  if (sb) sb.classList.remove('mobile-hidden');
+}
+// On resize back to wide — remove mobile-hidden
+window.addEventListener('resize', () => {
+  if (window.innerWidth > 768) {
+    const sb = document.getElementById('grid-sub-panel');
+    if (sb) sb.classList.remove('mobile-hidden');
+  }
+});
+</script>
+
+<!-- ── APPEARANCE LIVE PREVIEW ── -->
+<div id="appearance-preview" style="
+  display:none;position:fixed;right:24px;bottom:24px;
+  width:260px;background:#0d0e10;border:1px solid var(--accent-border);
+  border-radius:12px;overflow:hidden;z-index:600;
+  box-shadow:0 16px 40px rgba(0,0,0,0.7),0 0 0 0.5px rgba(0,229,255,0.08);
+  font-family:'JetBrains Mono',monospace;
+">
+  <div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+    <span style="font-size:9px;letter-spacing:0.12em;color:var(--accent);text-transform:uppercase">Live Preview</span>
+    <span onclick="document.getElementById('appearance-preview').style.display='none'" style="cursor:pointer;color:var(--text3);font-size:14px">✕</span>
+  </div>
+  <div id="ap-preview-body" style="position:relative;overflow:hidden;height:200px">
+    <!-- Fake lava blob -->
+    <canvas id="ap-preview-canvas" style="position:absolute;inset:0;width:100%;height:100%"></canvas>
+    <!-- Fake panels -->
+    <div style="position:absolute;inset:0;display:flex;gap:0">
+      <div id="ap-sidebar" style="width:44px;height:100%;border-right:1px solid var(--border)"></div>
+      <div id="ap-panel" style="width:80px;height:100%;border-right:1px solid var(--border)">
+        <div style="padding:8px 6px;display:flex;flex-direction:column;gap:4px">
+          <div id="ap-ch1" style="height:8px;border-radius:3px;background:var(--accent-dim);border:1px solid var(--accent-border)"></div>
+          <div id="ap-ch2" style="height:8px;border-radius:3px;background:rgba(255,255,255,0.04)"></div>
+          <div id="ap-ch3" style="height:8px;border-radius:3px;background:rgba(255,255,255,0.04)"></div>
+        </div>
+      </div>
+      <div id="ap-chat" style="flex:1;height:100%;display:flex;flex-direction:column;justify-content:flex-end;padding:8px">
+        <div style="height:12px;border-radius:4px;background:rgba(0,229,255,0.08);border:1px solid rgba(0,229,255,0.1);margin-bottom:5px"></div>
+        <div style="height:12px;border-radius:4px;background:rgba(255,255,255,0.04);width:70%;align-self:flex-end"></div>
+      </div>
+    </div>
+  </div>
+  <div style="padding:8px 14px;font-size:9px;color:var(--text3);border-top:1px solid var(--border)" id="ap-preview-label">DEFAULT theme</div>
+</div>
+
+<script>
+// ── Appearance live preview logic ──
+let apPreviewBlobAnim = null;
+
+function updateAppearancePreview() {
+  const isGlass = document.body.classList.contains('glass');
+  const preview = document.getElementById('appearance-preview');
+  const label   = document.getElementById('ap-preview-label');
+  const sidebar  = document.getElementById('ap-sidebar');
+  const panel    = document.getElementById('ap-panel');
+  const chat     = document.getElementById('ap-chat');
+  const canvas   = document.getElementById('ap-preview-canvas');
+
+  if (!preview) return;
+
+  const blur    = parseInt(document.getElementById('glass-blur-slider')?.value || 18);
+  const opacity = parseInt(document.getElementById('glass-opacity-slider')?.value || 55);
+
+  if (isGlass) {
+    const bg = `rgba(8,10,14,${opacity/100})`;
+    sidebar.style.background = `rgba(5,7,10,${(opacity+10)/100})`;
+    sidebar.style.backdropFilter = `blur(${blur}px)`;
+    panel.style.background = bg;
+    panel.style.backdropFilter = `blur(${blur}px)`;
+    chat.style.background = 'transparent';
+    label.textContent = `GLASS · blur ${blur}px · opacity ${opacity}%`;
+    canvas.style.display = 'block';
+    startPreviewBlob();
+  } else {
+    sidebar.style.background = '#0a0b0c';
+    sidebar.style.backdropFilter = 'none';
+    panel.style.background = '#0c0d0e';
+    panel.style.backdropFilter = 'none';
+    chat.style.background = 'transparent';
+    label.textContent = 'DEFAULT theme · Solid panels';
+    canvas.style.display = 'none';
+    stopPreviewBlob();
+  }
+}
+
+function startPreviewBlob() {
+  if (apPreviewBlobAnim) return;
+  const canvas = document.getElementById('ap-preview-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  let t = 0;
+  const speed = parseFloat(document.getElementById('glass-speed-slider')?.value || 5);
+  const intensity = parseInt(document.getElementById('glass-intensity-slider')?.value || 50) / 100;
+  function draw() {
+    canvas.width = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // Blob 1 — cyan
+    const x1 = canvas.width * (0.3 + 0.2 * Math.sin(t * 0.7));
+    const y1 = canvas.height * (0.4 + 0.2 * Math.cos(t * 0.5));
+    const g1 = ctx.createRadialGradient(x1, y1, 0, x1, y1, 90);
+    g1.addColorStop(0, `rgba(0,229,255,${0.25 * intensity})`);
+    g1.addColorStop(1, 'transparent');
+    ctx.fillStyle = g1; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Blob 2 — purple
+    const x2 = canvas.width * (0.7 + 0.15 * Math.cos(t * 0.6));
+    const y2 = canvas.height * (0.3 + 0.2 * Math.sin(t * 0.8));
+    const g2 = ctx.createRadialGradient(x2, y2, 0, x2, y2, 70);
+    g2.addColorStop(0, `rgba(123,97,255,${0.2 * intensity})`);
+    g2.addColorStop(1, 'transparent');
+    ctx.fillStyle = g2; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    t += 0.02 * (speed / 5);
+    apPreviewBlobAnim = requestAnimationFrame(draw);
+  }
+  draw();
+}
+
+function stopPreviewBlob() {
+  if (apPreviewBlobAnim) { cancelAnimationFrame(apPreviewBlobAnim); apPreviewBlobAnim = null; }
+}
+
+// Show preview when on Appearance tab
+const _origSwitchTab = window.switchTab;
+window.switchTab = function(tab, el) {
+  _origSwitchTab(tab, el);
+  const preview = document.getElementById('appearance-preview');
+  if (!preview) return;
+  if (tab === 'appearance') {
+    preview.style.display = 'block';
+    updateAppearancePreview();
+  } else {
+    preview.style.display = 'none';
+    stopPreviewBlob();
+  }
+};
+
+// Hook into applyGlassOptions to update preview in real-time
+const _origApplyGlassOptions = window.applyGlassOptions;
+window.applyGlassOptions = function() {
+  _origApplyGlassOptions();
+  updateAppearancePreview();
+};
+
+// Also hook setThemeMode
+const _origSetThemeMode = window.setThemeMode;
+window.setThemeMode = function(mode) {
+  _origSetThemeMode(mode);
+  updateAppearancePreview();
 };
 </script>
 </body>
