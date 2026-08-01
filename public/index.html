@@ -3537,7 +3537,7 @@ function handleMsg(data) {
       break;
 
     case 'friend_accepted':
-      friends[data.username] = { name: data.username, username: data.username, color: data.color, avatar: avatarCache.get(data.username) || null, online: true };
+      friends[data.username] = { name: data.username, username: data.username, color: data.color, avatar: data.avatar || avatarCache.get(data.username) || null, online: true };
       renderFriendsPanel(); renderDmList();
       showNotif(`${data.username} accepted!`, 'blue');
       break;
@@ -3576,9 +3576,35 @@ function handleMsg(data) {
     case 'group_call_answer':      handleGroupCallAnswer(data);     break;
     case 'group_call_ice':         handleGroupCallIce(data);        break;
 
-    case 'admin_feedback':
-      showNotif(data.msg, 'blue');
+    case 'nickname_update': {
+      // Admin renamed someone — update their display name everywhere
+      const { username, displayName } = data;
+      if (friends[username]) {
+        friends[username].displayName = displayName;
+        renderFriendsPanel(); renderDmList();
+      }
+      // If it's us — update own display
+      if (username === me.name) {
+        me.displayName = displayName;
+        updateMyProfile();
+      }
       break;
+    }
+
+    case 'username_update': {
+      // Someone changed their real username via settings
+      const { oldUsername, newUsername, color } = data;
+      if (friends[oldUsername]) {
+        friends[newUsername] = { ...friends[oldUsername], name: newUsername, username: newUsername };
+        delete friends[oldUsername];
+        renderFriendsPanel(); renderDmList();
+      }
+      if (oldUsername === me.name) {
+        me.name = newUsername;
+        updateMyProfile();
+      }
+      break;
+    }
 
     case 'admin_action': {
       switch(data.action) {
@@ -3621,6 +3647,20 @@ function handleMsg(data) {
       }
       break;
     }
+
+    case 'admin_feedback':
+      showNotif(data.msg, 'blue');
+      break;
+
+    case 'color_update': {
+      if (friends[data.username]) {
+        friends[data.username].color = data.color;
+        renderFriendsPanel(); renderDmList();
+      }
+      if (data.username === me.name) { me.color = data.color; updateMyProfile(); }
+      break;
+    }
+
   } // end switch
 } // end handleMsg
 
@@ -5737,7 +5777,7 @@ function renderFriendsPanel() {
     div.innerHTML = `
       <div class="friend-card-av" style="${avStyle(f.color, f.avatar, f.name)}">${avHtml(f.name, f.color, f.avatar)}</div>
       <div style="flex:1;min-width:0">
-        <div class="friend-card-name">${esc(f.name)}</div>
+        <div class="friend-card-name">${esc(f.displayName || f.name)}</div>
         <div class="friend-card-status ${f.online?'online':'offline'}">${f.online?'online':'offline'}</div>
       </div>
       <button class="friend-remove" onclick="event.stopPropagation();removeFriend('${esc(tag)}')"><i class="ti ti-x"></i></button>`;
@@ -5760,7 +5800,7 @@ function renderDmList() {
     div.innerHTML = `
       <div class="dm-av ${f.online?'':'offline'}" style="${avStyle(f.color, f.avatar, f.name)}">${avHtml(f.name, f.color, f.avatar)}</div>
       <div class="dm-info">
-        <div class="dm-name">${esc(f.name)}</div>
+        <div class="dm-name">${esc(f.displayName || f.name)}</div>
         <div class="dm-status ${f.online?'online':''}">${f.online?'Active':'Offline'}</div>
       </div>
       <span class="dm-unread${unreadCount>0?' show':''}">${unreadCount||''}</span>`;

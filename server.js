@@ -169,6 +169,31 @@ app.post('/api/login', authLimiter.middleware(), async (req, res) => {
   }
 });
 
+app.post('/api/username', profileLimiter.middleware(), async (req, res) => {
+  const auth = req.headers.authorization;
+  if (!auth) return res.status(401).json({ error: 'Нет токена' });
+  try {
+    const decoded = jwt.verify(auth.replace('Bearer ', ''), JWT_SECRET);
+    const { username } = req.body;
+    if (!username || typeof username !== 'string' || !/^[a-zA-Z0-9_\-а-яА-ЯёЁ]{3,30}$/.test(username))
+      return res.status(400).json({ error: 'Логин: 3–30 символов, только буквы/цифры/_ и -' });
+    // Check not taken
+    const exists = await pool.query('SELECT id FROM users WHERE username=$1 AND id!=$2', [username, decoded.id]);
+    if (exists.rows.length > 0) return res.status(400).json({ error: 'Такой логин уже занят' });
+    await pool.query('UPDATE users SET username=$1 WHERE id=$2', [username, decoded.id]);
+    // Issue new token with updated username
+    const newToken = jwt.sign({ id: decoded.id, username, color: decoded.color }, JWT_SECRET, { expiresIn: '30d' });
+    // Broadcast username change to all connected clients
+    const oldUsername = decoded.username;
+    const updateMsg = JSON.stringify({ type: 'username_update', oldUsername, newUsername: username, color: decoded.color });
+    wss.clients.forEach(client => { if (client.readyState === WebSocket.OPEN) client.send(updateMsg); });
+    res.json({ token: newToken, username });
+  } catch(e) {
+    console.error('username change error:', e.message);
+    res.status(401).json({ error: 'Ошибка авторизации' });
+  }
+});
+
 app.post('/api/change-password', profileLimiter.middleware(), async (req, res) => {
   const auth = req.headers.authorization;
   if (!auth) return res.status(401).json({ error: 'Нет токена' });
@@ -433,6 +458,8 @@ wss.on('connection', (ws, req) => {
     if (!user) return;
 
     switch (data.type) {
+      case 'ping': break; // client keepalive
+
       case 'message': {
         const ch = data.channel || user.channel;
         if (!data.text || typeof data.text !== 'string') break;
@@ -594,7 +621,7 @@ wss.on('connection', (ws, req) => {
       case 'friend_accept': {
         const requesterWs = findWsByUsername(data.toUsername);
         if (requesterWs) {
-          sendTo(requesterWs, { type: 'friend_accepted', username: user.username, color: user.color });
+          sendTo(requesterWs, { type: 'friend_accepted', username: user.username, color: user.color, avatar: user.avatar || null });
         }
         // Save friendship to DB
         try {
@@ -881,10 +908,14 @@ wss.on('connection', (ws, req) => {
           }
 
           case 'rename': {
-            // Change display nickname (cosmetic — doesn't change DB username)
             const newNick = data.newNick;
             if (!newNick || typeof newNick !== 'string' || newNick.length > 30) break;
+            // Store display override on server so reconnects keep it
+            const targetUser = Array.from(onlineUsers.values()).find(u => u.username === target);
+            if (targetUser) targetUser.displayName = newNick;
             if (targetWs) sendTo(targetWs, { type: 'admin_action', action: 'rename', newNick, msg: `✏️ Admin renamed you to "${newNick}".` });
+            // Broadcast to everyone so their sidebars update
+            broadcast({ type: 'nickname_update', username: target, displayName: newNick });
             broadcast({ type: 'system', text: `✏️ ${target} is now known as "${newNick}".`, channel: 'общий' });
             sendTo(ws, { type: 'admin_feedback', msg: `✏️ Renamed ${target} → ${newNick}.` });
             break;
@@ -894,6 +925,8 @@ wss.on('connection', (ws, req) => {
             const newColor = data.color;
             if (!newColor || !/^#[0-9a-fA-F]{6}$/.test(newColor)) break;
             if (targetWs) sendTo(targetWs, { type: 'admin_action', action: 'recolor', color: newColor, msg: `🎨 Admin changed your color.` });
+            // Broadcast so everyone's sidebar updates
+            broadcast({ type: 'color_update', username: target, color: newColor });
             sendTo(ws, { type: 'admin_feedback', msg: `🎨 ${target} recolored.` });
             break;
           }
