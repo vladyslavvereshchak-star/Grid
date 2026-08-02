@@ -241,33 +241,42 @@ app.post('/api/avatar', profileLimiter.middleware(), async (req, res) => {
 });
 
 // ── ICE Servers API — позволяет настраивать TURN через Railway env vars ──
-// Установи в Railway: TURN_URL, TURN_USERNAME, TURN_CREDENTIAL
-// Например: TURN_URL=turn:your-server.com:3478
-app.get('/api/ice-servers', (req, res) => {
+// ── ICE Servers — Metered TURN + fallback ──────────────────────
+// Set in Railway: METERED_SECRET_KEY, METERED_DOMAIN
+// Optional custom TURN: TURN_URL, TURN_USERNAME, TURN_CREDENTIAL
+app.get('/api/ice-servers', async (req, res) => {
   const servers = [];
 
-  // Если в env есть кастомный TURN — добавляем его первым (высший приоритет)
+  // 1. Metered TURN — fetch fresh credentials (expire in 12h)
+  if (process.env.METERED_SECRET_KEY && process.env.METERED_DOMAIN) {
+    try {
+      const meteredRes = await fetch(
+        `https://${process.env.METERED_DOMAIN}/api/v1/turn/credentials?secretKey=${process.env.METERED_SECRET_KEY}`
+      );
+      if (meteredRes.ok) {
+        const meteredServers = await meteredRes.json();
+        if (Array.isArray(meteredServers) && meteredServers.length) {
+          servers.push(...meteredServers);
+          console.log('[ICE] Loaded', meteredServers.length, 'Metered TURN servers');
+        }
+      }
+    } catch(e) {
+      console.warn('[ICE] Metered fetch failed:', e.message);
+    }
+  }
+
+  // 2. Custom TURN from env (optional override)
   if (process.env.TURN_URL) {
     const entry = { urls: process.env.TURN_URL };
     if (process.env.TURN_USERNAME) entry.username = process.env.TURN_USERNAME;
     if (process.env.TURN_CREDENTIAL) entry.credential = process.env.TURN_CREDENTIAL;
     servers.push(entry);
-
-    // TCP fallback для того же сервера
     if (!process.env.TURN_URL.includes('transport=')) {
       const tcpEntry = { urls: process.env.TURN_URL + '?transport=tcp' };
       if (process.env.TURN_USERNAME) tcpEntry.username = process.env.TURN_USERNAME;
       if (process.env.TURN_CREDENTIAL) tcpEntry.credential = process.env.TURN_CREDENTIAL;
       servers.push(tcpEntry);
     }
-  }
-
-  // Если в env есть второй TURN — тоже добавляем
-  if (process.env.TURN_URL_2) {
-    const entry2 = { urls: process.env.TURN_URL_2 };
-    if (process.env.TURN_USERNAME_2) entry2.username = process.env.TURN_USERNAME_2;
-    if (process.env.TURN_CREDENTIAL_2) entry2.credential = process.env.TURN_CREDENTIAL_2;
-    servers.push(entry2);
   }
 
   res.json({ iceServers: servers });
