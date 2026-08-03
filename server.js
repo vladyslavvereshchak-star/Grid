@@ -243,41 +243,45 @@ app.post('/api/avatar', profileLimiter.middleware(), async (req, res) => {
 // ── ICE Servers API — позволяет настраивать TURN через Railway env vars ──
 // ── ICE Servers — Metered TURN + fallback ──────────────────────
 // Set in Railway: METERED_SECRET_KEY, METERED_DOMAIN
-// Optional custom TURN: TURN_URL, TURN_USERNAME, TURN_CREDENTIAL
 app.get('/api/ice-servers', async (req, res) => {
   const servers = [];
 
-  // 1. Metered TURN — fetch fresh credentials (expire in 12h)
   if (process.env.METERED_SECRET_KEY && process.env.METERED_DOMAIN) {
     try {
-      const meteredRes = await fetch(
-        `https://${process.env.METERED_DOMAIN}/api/v1/turn/credentials?secretKey=${process.env.METERED_SECRET_KEY}`
-      );
-      if (meteredRes.ok) {
-        const meteredServers = await meteredRes.json();
-        if (Array.isArray(meteredServers) && meteredServers.length) {
-          servers.push(...meteredServers);
-          console.log('[ICE] Loaded', meteredServers.length, 'Metered TURN servers');
+      // Step 1: Create a credential
+      const credRes = await fetch(
+        `https://${process.env.METERED_DOMAIN}/api/v1/turn/credential?secretKey=${process.env.METERED_SECRET_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ label: 'grid', expiryInSeconds: 86400 })
         }
+      );
+      const cred = await credRes.json();
+      if (cred.apiKey) {
+        // Step 2: Get ICE servers array using apiKey
+        const iceRes = await fetch(
+          `https://${process.env.METERED_DOMAIN}/api/v1/turn/credentials?apiKey=${cred.apiKey}`
+        );
+        const iceServers = await iceRes.json();
+        if (Array.isArray(iceServers) && iceServers.length) {
+          servers.push(...iceServers);
+          console.log('[ICE] Loaded', iceServers.length, 'Metered TURN servers');
+        }
+      } else {
+        console.warn('[ICE] Metered credential error:', cred);
       }
     } catch(e) {
       console.warn('[ICE] Metered fetch failed:', e.message);
     }
   }
 
-  // 2. Custom TURN from env (optional override)
-  if (process.env.TURN_URL) {
-    const entry = { urls: process.env.TURN_URL };
-    if (process.env.TURN_USERNAME) entry.username = process.env.TURN_USERNAME;
-    if (process.env.TURN_CREDENTIAL) entry.credential = process.env.TURN_CREDENTIAL;
-    servers.push(entry);
-    if (!process.env.TURN_URL.includes('transport=')) {
-      const tcpEntry = { urls: process.env.TURN_URL + '?transport=tcp' };
-      if (process.env.TURN_USERNAME) tcpEntry.username = process.env.TURN_USERNAME;
-      if (process.env.TURN_CREDENTIAL) tcpEntry.credential = process.env.TURN_CREDENTIAL;
-      servers.push(tcpEntry);
-    }
-  }
+  // Fallback STUN servers always included
+  servers.push(
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' }
+  );
 
   res.json({ iceServers: servers });
 });
