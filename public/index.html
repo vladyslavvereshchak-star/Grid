@@ -4315,6 +4315,13 @@ function postCallWidget() {
     if (fill) { fill.style.width = '100%'; void fill.offsetWidth; fill.style.width = '0%'; }
   });
 
+  // Auto-mark ENDED when bar finishes (30s) if no one joined
+  const soloEndTimer = setTimeout(() => {
+    if (!widget.classList.contains('ended') && !callActive) {
+      markWidgetEnded();
+    }
+  }, 30000);
+
   // Widget timer
   const timerEl = widget.querySelector('.widget-timer');
   let widgetSecs = 0;
@@ -4398,8 +4405,17 @@ function markWidgetConnected() {
 
 // Callee clicks widget to join
 function joinCallFromWidget(btn) {
-  if (!callPeer) return;
-  (window.acceptIncomingCall || acceptIncomingCall)();
+  // If still in pending state (callPeer set, not yet connected) — accept
+  if (callPeer && !callActive) {
+    (window.acceptIncomingCall || acceptIncomingCall)();
+    return;
+  }
+  // If call ended and we want to call back — start a new call
+  if (!callActive && dmWith) {
+    startCall();
+    return;
+  }
+  // Already in call — ignore
 }
 
 // Handle incoming call_widget message (shown in callee's DM chat)
@@ -4430,11 +4446,21 @@ function renderCallWidget(data) {
   scrollBottom();
   callWidgetEl = widget;
 
-  // Timeout bar + timer
+  // Timeout bar animation
   requestAnimationFrame(() => {
     const fill = widget.querySelector('.widget-timeout-fill');
     if (fill) { fill.style.width = '100%'; void fill.offsetWidth; fill.style.width = '0%'; }
   });
+
+  // Auto-mark ENDED when bar finishes (30s)
+  const incomingEndTimer = setTimeout(() => {
+    if (!widget.classList.contains('ended')) {
+      widget.classList.add('ended');
+      const btn = widget.querySelector('.widget-join-btn');
+      if (btn) { btn.textContent = 'Ended'; btn.style.opacity = '0.4'; btn.style.pointerEvents = 'none'; }
+      clearInterval(widget._widgetTimer);
+    }
+  }, 30000);
   const timerEl = widget.querySelector('.widget-timer');
   let widgetSecs = 0;
   const widgetTimer = setInterval(() => {
