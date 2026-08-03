@@ -357,10 +357,14 @@ function sendTo(ws, data) {
   if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data));
 }
 
+// Track last seen timestamps for offline users
+const lastSeenMap = new Map(); // username → timestamp ms
+
 function getUserList() {
   return Array.from(onlineUsers.values()).map(u => ({
     username: u.username, color: u.color, avatar: u.avatar || null,
-    channel: u.channel, voiceChannel: u.voiceChannel || null
+    channel: u.channel, voiceChannel: u.voiceChannel || null,
+    status: u.status || 'online'
   }));
 }
 
@@ -462,7 +466,7 @@ wss.on('connection', (ws, req) => {
           history: channels['общий'].slice(-50),
           voiceChannels: getVoiceChannelList()
         });
-        broadcast({ type: 'user_joined', username: user.username, color: user.color, avatar, users: getUserList() });
+        broadcast({ type: 'user_joined', username: user.username, color: user.color, avatar, status: 'online', users: getUserList() });
         broadcast({ type: 'system', text: `${user.username} зашёл в сеть`, channel: 'общий' });
       } catch(e) {
         console.error('auth error', e);
@@ -477,6 +481,26 @@ wss.on('connection', (ws, req) => {
 
     switch (data.type) {
       case 'ping': break; // client keepalive
+
+      case 'set_status': {
+        // Client sets their status: online | away
+        if (typeof data.status !== 'string') break;
+        const validStatuses = ['online', 'away'];
+        if (!validStatuses.includes(data.status)) break;
+        user.status = data.status;
+        user.awayAt = data.status === 'away' ? Date.now() : null;
+        broadcast({ type: 'user_status', username: user.username, status: data.status, awayAt: user.awayAt, users: getUserList() });
+        break;
+      }
+
+      case 'get_last_seen': {
+        // Return lastSeen timestamps for requested usernames
+        const usernames = Array.isArray(data.usernames) ? data.usernames.slice(0, 50) : [];
+        const result = {};
+        usernames.forEach(u => { if (lastSeenMap.has(u)) result[u] = lastSeenMap.get(u); });
+        sendTo(ws, { type: 'last_seen_data', data: result });
+        break;
+      }
 
       case 'message': {
         const ch = data.channel || user.channel;
@@ -1002,7 +1026,8 @@ wss.on('connection', (ws, req) => {
         }
       });
       broadcast({ type: 'system', text: `${user.username} вышел`, channel: 'общий' });
-      broadcast({ type: 'user_left', username: user.username, users: getUserList() });
+      lastSeenMap.set(user.username, Date.now());
+      broadcast({ type: 'user_left', username: user.username, lastSeen: Date.now(), users: getUserList() });
       onlineUsers.delete(ws);
     }
   });

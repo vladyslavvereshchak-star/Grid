@@ -470,15 +470,17 @@ body.electron .app{height:calc(100vh - 32px)}
 }
 .dm-av::after{
   content:'';position:absolute;bottom:-2px;right:-2px;
-  width:8px;height:8px;border-radius:50%;background:var(--accent);
+  width:8px;height:8px;border-radius:50%;background:#3ba55c;
   border:2px solid #0f1011;
 }
 .dm-av.offline::after{background:#2a3540}
+.dm-av.away::after{background:#f0b44a}
 
 .dm-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
 .dm-name{font-size:11px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.dm-status{font-size:9px;color:var(--text3);letter-spacing:0.04em}
-.dm-status.online{color:var(--accent);opacity:0.7}
+.dm-status{font-size:9px;color:var(--text3);letter-spacing:0.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dm-status.online{color:#3ba55c;opacity:0.9}
+.dm-status.away{color:#f0b44a;opacity:0.9}
 
 .dm-unread{
   margin-left:auto;background:var(--accent);color:#000;font-size:9px;
@@ -769,7 +771,9 @@ body.electron .app{height:calc(100vh - 32px)}
 }
 .friend-card-name{font-size:10px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .friend-card-status{font-size:9px;color:var(--text3)}
-.friend-card-status.online{color:var(--accent);opacity:0.7}
+.friend-card-status.online{color:#3ba55c;opacity:0.9}
+.friend-card-status.away{color:#f0b44a;opacity:0.9}
+.friend-card-status.offline{color:var(--text3)}
 .friend-remove{
   background:none;border:none;color:var(--text3);cursor:pointer;
   font-size:10px;padding:2px;opacity:0;transition:all 0.2s;
@@ -1008,7 +1012,27 @@ body.electron .app{height:calc(100vh - 32px)}
   min-width:0;
   transition:border-color 0.3s,box-shadow 0.3s;
 }
-/* Speaking: subtle border glow — waveform canvas does the heavy lifting */
+/* ── Away status indicator ── */
+.status-dot { display:inline-block; width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+.status-dot.online  { background:#3ba55c; box-shadow:0 0 6px rgba(59,165,92,0.6); }
+.status-dot.away    { background:#f0b44a; box-shadow:0 0 6px rgba(240,180,74,0.6); }
+.status-dot.offline { background:#4a4a4a; }
+.status-text { font-size:9px; color:var(--text3); letter-spacing:0.03em; }
+.status-text.online  { color:#3ba55c; }
+.status-text.away    { color:#f0b44a; }
+
+/* ── Wave ripple effect ── */
+#wave-canvas {
+  position:fixed; inset:0; pointer-events:none; z-index:9999;
+  opacity:0; transition:opacity 0.3s;
+}
+body.wave-effect #wave-canvas { opacity:1; }
+.wave-hover {
+  transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) !important;
+}
+body.wave-effect .wave-hover:hover {
+  /* JS will override this dynamically */
+}
 .chat-call-person.speaking{
   border-color:rgba(0,229,255,0.35);
   box-shadow:0 0 18px rgba(0,229,255,0.07);
@@ -2147,7 +2171,8 @@ input[type=range]:focus{outline:none}
   font-size:9px;letter-spacing:0.07em;text-transform:uppercase;
   transition:color 0.3s;
 }
-.peer-status.online{color:var(--accent);opacity:0.85}
+.peer-status.online{color:#3ba55c;opacity:0.85}
+.peer-status.away{color:#f0b44a;opacity:0.85}
 .peer-status.offline{color:var(--text3)}
 
 /* Кнопки действий под профилем */
@@ -2239,6 +2264,7 @@ input[type=range]:focus{outline:none}
 </div>
 
 <!-- APP GLASS LAVA CANVAS (fixed, behind everything, only shown in glass mode) -->
+<canvas id="wave-canvas"></canvas>
 <canvas id="app-lava-canvas"></canvas>
 
 <!-- ELECTRON TITLEBAR -->
@@ -3153,11 +3179,59 @@ input[type=range]:focus{outline:none}
           </div>
         </div>
 
+        <!-- Wave effect + hover style settings -->
+        <div style="padding-top:16px;border-top:1px solid var(--border);margin-bottom:4px">
+          <div class="modal-section-title" style="margin-bottom:14px">Hover Effects</div>
+
+          <!-- Hover style selector -->
+          <div style="margin-bottom:16px">
+            <div style="font-size:11px;color:var(--text2);letter-spacing:0.04em;margin-bottom:8px">Style</div>
+            <div style="display:flex;gap:8px">
+              <div id="hover-card-classic" onclick="setHoverStyle('classic')"
+                style="flex:1;padding:8px;border-radius:8px;border:1.5px solid var(--accent-border);background:var(--accent-dim);cursor:pointer;text-align:center;font-size:9px;color:var(--accent);letter-spacing:0.06em;transition:all 0.2s">
+                CLASSIC<br><span style="color:var(--text3);font-size:8px">Glow on hover</span>
+              </div>
+              <div id="hover-card-wave" onclick="setHoverStyle('wave')"
+                style="flex:1;padding:8px;border-radius:8px;border:1.5px solid var(--border2);background:transparent;cursor:pointer;text-align:center;font-size:9px;color:var(--text2);letter-spacing:0.06em;transition:all 0.2s">
+                WAVE<br><span style="color:var(--text3);font-size:8px">Ripple from cursor</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Wave strength (only shown in wave mode) -->
+          <div id="wave-settings" style="display:none">
+            <div style="margin-bottom:16px">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px">
+                <div style="font-size:11px;color:var(--text2);letter-spacing:0.04em">Wave strength</div>
+                <span style="font-size:10px;color:var(--accent);min-width:32px;text-align:right" id="wave-strength-val">50%</span>
+              </div>
+              <input type="range" class="ctx-slider" id="wave-strength-slider"
+                min="10" max="100" value="50" step="5" style="width:100%"
+                oninput="applyWaveSettings()">
+              <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text3);margin-top:3px">
+                <span>Subtle</span><span>Strong</span>
+              </div>
+            </div>
+            <div style="margin-bottom:4px">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px">
+                <div style="font-size:11px;color:var(--text2);letter-spacing:0.04em">Element lift</div>
+                <span style="font-size:10px;color:var(--accent);min-width:32px;text-align:right" id="wave-lift-val">4px</span>
+              </div>
+              <input type="range" class="ctx-slider" id="wave-lift-slider"
+                min="1" max="12" value="4" step="1" style="width:100%"
+                oninput="applyWaveSettings()">
+              <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text3);margin-top:3px">
+                <span>None</span><span>Float</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
       </div>
     </div>
   </div>
 </div>
-<div class="friend-req" id="friend-req">
   <div class="friend-req-title">⟶ Contact Request</div>
   <div class="friend-req-name" id="friend-req-name">—</div>
   <div class="friend-req-btns">
@@ -3218,6 +3292,43 @@ let lastMsgAuthor = '';
 let hotkeys = { mute:'M' };
 let recordingFor = null;
 let friends = {};
+const lastSeenData = {}; // username → timestamp ms (when they went offline)
+
+// Format last seen time
+function formatLastSeen(ts) {
+  if (!ts) return 'Offline';
+  const diff = Date.now() - ts;
+  const mins  = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  if (mins < 1)   return 'Just now';
+  if (mins < 60)  return `${mins}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  const d = new Date(ts);
+  return d.toLocaleDateString('en', { month: 'short', day: 'numeric' });
+}
+
+// Format away duration
+function formatAway(awayAt) {
+  if (!awayAt) return 'Away';
+  const mins = Math.floor((Date.now() - awayAt) / 60000);
+  if (mins < 1)   return 'Away';
+  if (mins < 60)  return `Away · ${mins}m`;
+  return `Away · ${Math.floor(mins/60)}h`;
+}
+
+// Get status text for a friend
+function getFriendStatusText(f) {
+  if (f.online) {
+    if (f.status === 'away') return formatAway(f.awayAt);
+    return 'Active';
+  }
+  return formatLastSeen(lastSeenData[f.username]);
+}
+
+function getFriendStatusClass(f) {
+  if (f.online) return f.status === 'away' ? 'away' : 'online';
+  return 'offline';
+}
 let pendingRequests = []; // isolated buffer — never auto-creates DM
 let pendingRequest = null; // current displayed popup
 let dmMode = false;
@@ -3631,6 +3742,8 @@ function handleMsg(data) {
         setNavMode('server');
         updateChatHeader(me.channel);
       }
+      // Request lastSeen for all friends
+      setTimeout(() => { if (typeof requestLastSeen === 'function') requestLastSeen(); }, 1000);
       break;
 
     case 'message': {
@@ -3695,11 +3808,41 @@ function handleMsg(data) {
       }
       case 'user_joined':
         if (data.avatar !== undefined) avatarCache.set(data.username, data.avatar);
+        // Clear lastSeen when user comes online
+        delete lastSeenData[data.username];
+        if (friends[data.username]) { friends[data.username].online = true; friends[data.username].status = 'online'; friends[data.username].awayAt = null; }
     case 'user_left':
+        if (data.type === 'user_left' && data.lastSeen) {
+          lastSeenData[data.username] = data.lastSeen;
+          if (friends[data.username]) { friends[data.username].online = false; friends[data.username].status = 'offline'; }
+        }
     case 'users':
-        if (data.users) data.users.forEach(u => { if (u.avatar !== undefined) avatarCache.set(u.username, u.avatar); });
+        if (data.users) data.users.forEach(u => {
+          if (u.avatar !== undefined) avatarCache.set(u.username, u.avatar);
+          if (friends[u.username]) { friends[u.username].status = u.status || 'online'; }
+        });
+        updateUserList(data.users || []);
+        renderFriendsPanel(); renderDmList();
+        break;
+
+    case 'user_status': {
+      // Status changed: online | away
+      const { username: sUser, status: sStatus, awayAt: sAwayAt } = data;
+      if (friends[sUser]) {
+        friends[sUser].status = sStatus;
+        friends[sUser].awayAt = sAwayAt || null;
+      }
+      if (data.users) data.users.forEach(u => { if (u.avatar !== undefined) avatarCache.set(u.username, u.avatar); });
       updateUserList(data.users || []);
+      renderFriendsPanel(); renderDmList();
       break;
+    }
+
+    case 'last_seen_data': {
+      Object.assign(lastSeenData, data.data || {});
+      renderFriendsPanel(); renderDmList();
+      break;
+    }
 
     case 'channel_history':
       document.getElementById('messages').innerHTML = '';
@@ -6141,13 +6284,13 @@ function updateConversationPanel(tag) {
   if (nameEl)   nameEl.textContent   = f.displayName || f.name || tag;
   if (tagEl)    tagEl.textContent    = tag;
   if (statusEl) {
-    statusEl.textContent  = f.online ? 'Online' : 'Offline';
-    statusEl.className    = 'peer-status ' + (f.online ? 'online' : 'offline');
+    statusEl.textContent = getFriendStatusText(f);
+    statusEl.className   = 'peer-status ' + getFriendStatusClass(f);
   }
 
   // Статус-статистика
   const statStatusEl = document.getElementById('peer-stat-status');
-  if (statStatusEl) statStatusEl.textContent = f.online ? 'Online' : 'Away';
+  if (statStatusEl) statStatusEl.textContent = getFriendStatusText(f);
 
   // Счётчик сообщений этой переписки (считаем из DOM)
   const msgCount = document.querySelectorAll('#messages .msg').length;
@@ -6175,10 +6318,10 @@ function renderDmList() {
     div.dataset.tag = tag;
     div.onclick = () => openDm(tag);
     div.innerHTML = `
-      <div class="dm-av ${f.online?'':'offline'}" style="${avStyle(f.color, f.avatar, f.name)}">${avHtml(f.name, f.color, f.avatar)}</div>
+      <div class="dm-av ${!f.online ? 'offline' : f.status === 'away' ? 'away' : ''}" style="${avStyle(f.color, f.avatar, f.name)}">${avHtml(f.name, f.color, f.avatar)}</div>
       <div class="dm-info">
         <div class="dm-name">${esc(f.displayName || f.name)}</div>
-        <div class="dm-status ${f.online?'online':''}">${f.online?'Active':'Offline'}</div>
+        <div class="dm-status ${getFriendStatusClass(f)}">${getFriendStatusText(f)}</div>
       </div>
       <span class="dm-unread${unreadCount>0?' show':''}">${unreadCount||''}</span>`;
     list.appendChild(div);
@@ -8141,6 +8284,241 @@ window.setThemeMode = function(mode) {
   _origSetThemeMode(mode);
   updateAppearancePreview();
 };
+</script>
+<!-- ── WAVE EFFECT + AWAY STATUS + SETTINGS ── -->
+<script>
+// ══════════════════════════════════════════════════
+//  WAVE RIPPLE EFFECT
+// ══════════════════════════════════════════════════
+let waveStrength = 50;
+let waveLift = 4;
+let hoverStyle = localStorage.getItem('grid_hover_style') || 'classic';
+let waveCtx = null;
+let waves = [];
+let waveAnimId = null;
+
+function initWaveCanvas() {
+  const canvas = document.getElementById('wave-canvas');
+  if (!canvas) return;
+  waveCtx = canvas.getContext('2d');
+  function resize() {
+    canvas.width  = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+}
+
+function spawnWave(x, y) {
+  waves.push({ x, y, r: 0, maxR: Math.max(window.innerWidth, window.innerHeight) * 1.2, opacity: waveStrength / 100 * 0.18, born: Date.now() });
+  if (!waveAnimId) animateWaves();
+}
+
+function animateWaves() {
+  if (!waveCtx) return;
+  const canvas = document.getElementById('wave-canvas');
+  waveCtx.clearRect(0, 0, canvas.width, canvas.height);
+  const speed = 4 + waveStrength * 0.06;
+  waves = waves.filter(w => {
+    w.r += speed;
+    const progress = w.r / w.maxR;
+    const opacity = w.opacity * (1 - progress);
+    if (opacity < 0.002) return false;
+    waveCtx.beginPath();
+    waveCtx.arc(w.x, w.y, w.r, 0, Math.PI * 2);
+    waveCtx.strokeStyle = `rgba(0,229,255,${opacity})`;
+    waveCtx.lineWidth = 1.5;
+    waveCtx.stroke();
+    // Second inner ring
+    if (w.r > 30) {
+      waveCtx.beginPath();
+      waveCtx.arc(w.x, w.y, w.r * 0.6, 0, Math.PI * 2);
+      waveCtx.strokeStyle = `rgba(123,97,255,${opacity * 0.5})`;
+      waveCtx.lineWidth = 0.8;
+      waveCtx.stroke();
+    }
+    return true;
+  });
+
+  // Apply lift effect to elements near wave fronts
+  if (waveLift > 0) {
+    const liftEls = document.querySelectorAll('.wave-hover');
+    liftEls.forEach(el => {
+      const rect = el.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top  + rect.height / 2;
+      let maxDisp = 0;
+      waves.forEach(w => {
+        const dist = Math.hypot(cx - w.x, cy - w.y);
+        const frontDist = Math.abs(dist - w.r);
+        if (frontDist < 40) {
+          const strength = (1 - frontDist / 40) * waveLift * (w.opacity / 0.18);
+          maxDisp = Math.max(maxDisp, strength);
+        }
+      });
+      el.style.transform = maxDisp > 0.1 ? `translateY(-${maxDisp.toFixed(1)}px) scale(${1 + maxDisp * 0.003})` : '';
+    });
+  }
+
+  if (waves.length > 0) {
+    waveAnimId = requestAnimationFrame(animateWaves);
+  } else {
+    waveAnimId = null;
+    // Reset transforms
+    document.querySelectorAll('.wave-hover').forEach(el => el.style.transform = '');
+  }
+}
+
+// Mouse move — spawn waves
+let lastWaveSpawn = 0;
+document.addEventListener('mousemove', (e) => {
+  if (hoverStyle !== 'wave') return;
+  const now = Date.now();
+  if (now - lastWaveSpawn < 120) return; // throttle
+  lastWaveSpawn = now;
+  spawnWave(e.clientX, e.clientY);
+});
+
+// Click — big wave
+document.addEventListener('click', (e) => {
+  if (hoverStyle !== 'wave') return;
+  const bigWave = { x: e.clientX, y: e.clientY, r: 0, maxR: Math.max(window.innerWidth, window.innerHeight) * 1.4, opacity: waveStrength / 100 * 0.35, born: Date.now() };
+  waves.push(bigWave);
+  if (!waveAnimId) animateWaves();
+});
+
+// Add wave-hover class to interactive elements
+function applyWaveClasses() {
+  const selectors = [
+    '.msg', '.dm-entry', '.msg-img-attach', '.msg-file',
+    'button', '.lang-btn', '.cbar-btn', '.call-btn',
+    '.friend-card', '.channel-item', '.voice-ch-item',
+    '.emoji-btn', '.ctx-item', '.tab-btn', '.modal-tab',
+    '.notif', '.chat-call-widget'
+  ];
+  selectors.forEach(sel => {
+    document.querySelectorAll(sel).forEach(el => el.classList.add('wave-hover'));
+  });
+}
+
+// Re-apply when DOM changes
+const waveObserver = new MutationObserver(() => {
+  if (hoverStyle === 'wave') applyWaveClasses();
+});
+waveObserver.observe(document.body, { childList: true, subtree: true });
+
+function setHoverStyle(style) {
+  hoverStyle = style;
+  localStorage.setItem('grid_hover_style', style);
+  const classicCard = document.getElementById('hover-card-classic');
+  const waveCard    = document.getElementById('hover-card-wave');
+  const waveSettings = document.getElementById('wave-settings');
+  if (style === 'wave') {
+    document.body.classList.add('wave-effect');
+    if (classicCard) { classicCard.style.borderColor = 'var(--border2)'; classicCard.style.background = 'transparent'; classicCard.style.color = 'var(--text2)'; }
+    if (waveCard)    { waveCard.style.borderColor = 'var(--accent-border)'; waveCard.style.background = 'var(--accent-dim)'; waveCard.style.color = 'var(--accent)'; }
+    if (waveSettings) waveSettings.style.display = 'block';
+    applyWaveClasses();
+  } else {
+    document.body.classList.remove('wave-effect');
+    waves = [];
+    if (classicCard) { classicCard.style.borderColor = 'var(--accent-border)'; classicCard.style.background = 'var(--accent-dim)'; classicCard.style.color = 'var(--accent)'; }
+    if (waveCard)    { waveCard.style.borderColor = 'var(--border2)'; waveCard.style.background = 'transparent'; waveCard.style.color = 'var(--text2)'; }
+    if (waveSettings) waveSettings.style.display = 'none';
+    document.querySelectorAll('.wave-hover').forEach(el => { el.classList.remove('wave-hover'); el.style.transform = ''; });
+  }
+}
+
+function applyWaveSettings() {
+  const strengthEl = document.getElementById('wave-strength-slider');
+  const liftEl     = document.getElementById('wave-lift-slider');
+  if (strengthEl) { waveStrength = parseInt(strengthEl.value); document.getElementById('wave-strength-val').textContent = waveStrength + '%'; }
+  if (liftEl)     { waveLift = parseInt(liftEl.value); document.getElementById('wave-lift-val').textContent = waveLift + 'px'; }
+  localStorage.setItem('grid_wave_strength', waveStrength);
+  localStorage.setItem('grid_wave_lift', waveLift);
+}
+
+// Init wave settings from storage
+(function() {
+  const savedStrength = parseInt(localStorage.getItem('grid_wave_strength') || '50');
+  const savedLift     = parseInt(localStorage.getItem('grid_wave_lift') || '4');
+  waveStrength = savedStrength;
+  waveLift     = savedLift;
+  const sEl = document.getElementById('wave-strength-slider');
+  const lEl = document.getElementById('wave-lift-slider');
+  if (sEl) { sEl.value = savedStrength; document.getElementById('wave-strength-val').textContent = savedStrength + '%'; }
+  if (lEl) { lEl.value = savedLift; document.getElementById('wave-lift-val').textContent = savedLift + 'px'; }
+})();
+
+// ══════════════════════════════════════════════════
+//  AWAY STATUS — auto-detect inactivity
+// ══════════════════════════════════════════════════
+let _awayTimer = null;
+const AWAY_TIMEOUT = 5 * 60 * 1000; // 5 minutes inactive = away
+
+function resetAwayTimer() {
+  if (_awayTimer) clearTimeout(_awayTimer);
+  // If we were away — go back online
+  if (me.status === 'away') {
+    me.status = 'online';
+    wsSend({ type: 'set_status', status: 'online' });
+  }
+  _awayTimer = setTimeout(() => {
+    if (document.hidden) return; // don't mark away if tab hidden already
+    me.status = 'away';
+    wsSend({ type: 'set_status', status: 'away' });
+  }, AWAY_TIMEOUT);
+}
+
+// Detect activity
+['mousemove','keydown','click','touchstart','scroll'].forEach(evt => {
+  document.addEventListener(evt, resetAwayTimer, { passive: true });
+});
+
+// Page visibility — hidden tab = away, visible = online
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    if (me.status !== 'away') {
+      me.status = 'away';
+      wsSend({ type: 'set_status', status: 'away' });
+    }
+  } else {
+    resetAwayTimer();
+  }
+});
+
+// Periodically refresh status display (so "5m ago" updates in real time)
+setInterval(() => {
+  if (Object.keys(friends).length > 0) {
+    renderDmList();
+    if (dmMode && dmWith) renderFriendsPanel();
+  }
+}, 60000); // every minute
+
+// Request lastSeen for all friends after connect
+function requestLastSeen() {
+  const usernames = Object.keys(friends);
+  if (usernames.length && ws && ws.readyState === 1) {
+    wsSend({ type: 'get_last_seen', usernames });
+  }
+}
+
+// Hook into welcome to request lastSeen and init everything
+const _origWelcomeInit = window._welcomeInit;
+window._welcomeInit = function() {
+  if (_origWelcomeInit) _origWelcomeInit();
+  setTimeout(requestLastSeen, 1000);
+  initWaveCanvas();
+  setHoverStyle(hoverStyle);
+  resetAwayTimer();
+};
+
+// Apply on load
+window.addEventListener('load', () => {
+  initWaveCanvas();
+  setHoverStyle(hoverStyle);
+  resetAwayTimer();
+});
 </script>
 </body>
 </html>
