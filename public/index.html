@@ -2066,6 +2066,140 @@ input[type=range]:focus{outline:none}
   letter-spacing: 0.04em;
   line-height: 1.4;
 }
+
+/* ══════════════════════════════════
+   PEER PANEL — правая панель собеседника
+══════════════════════════════════ */
+
+/* Пустое состояние — нет активного DM */
+.peer-panel-empty{
+  flex:1;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  gap:8px;padding:20px 16px;
+}
+.peer-empty-icon{
+  width:42px;height:42px;border-radius:10px;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--chrome);border:1px solid var(--border2);
+  border-top:var(--chrome-bevel);
+  color:var(--text3);font-size:18px;margin-bottom:4px;
+}
+.peer-empty-title{
+  font-size:10px;font-weight:700;color:var(--text3);
+  letter-spacing:0.1em;text-transform:uppercase;
+}
+.peer-empty-sub{
+  font-size:9px;color:var(--text3);opacity:0.6;
+  letter-spacing:0.04em;text-align:center;line-height:1.6;
+}
+
+/* Активное состояние — профиль собеседника */
+.peer-panel-active{
+  display:flex;flex-direction:column;width:100%;flex:1;overflow:hidden;
+}
+
+.peer-banner{
+  height:60px;
+  background:linear-gradient(135deg,rgba(0,229,255,0.06) 0%,transparent 70%);
+  position:relative;flex-shrink:0;
+  border-bottom:1px solid var(--border);
+}
+/* Тонкая линия сверху — акцент */
+.peer-banner::after{
+  content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(0,229,255,0.25),transparent);
+}
+.peer-av-wrap{
+  position:absolute;bottom:-22px;left:14px;
+}
+.peer-av{
+  width:48px;height:48px;border-radius:11px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:17px;font-weight:700;
+  border:2.5px solid #0b0c0d;
+  box-shadow:0 0 0 1px var(--accent-border),var(--chrome-hover);
+  overflow:hidden;position:relative;
+}
+.peer-online-dot{
+  width:11px;height:11px;border-radius:50%;
+  background:var(--text3);
+  border:2px solid #0b0c0d;
+  position:absolute;bottom:-2px;right:-2px;
+  transition:background 0.3s;
+}
+.peer-online-dot.online{background:var(--accent);box-shadow:0 0 6px rgba(0,229,255,0.5)}
+
+.peer-body{
+  padding:30px 14px 12px;
+  border-bottom:1px solid var(--border);
+  flex-shrink:0;
+}
+.peer-name{
+  font-size:14px;font-weight:700;color:var(--text);
+  letter-spacing:0.03em;margin-bottom:2px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.peer-tag{
+  font-size:9px;color:var(--text3);
+  letter-spacing:0.08em;text-transform:uppercase;margin-bottom:4px;
+}
+.peer-status{
+  font-size:9px;letter-spacing:0.07em;text-transform:uppercase;
+  transition:color 0.3s;
+}
+.peer-status.online{color:var(--accent);opacity:0.85}
+.peer-status.offline{color:var(--text3)}
+
+/* Кнопки действий под профилем */
+.peer-actions{
+  padding:10px 12px;
+  display:flex;gap:6px;
+  flex-shrink:0;
+  border-bottom:1px solid var(--border);
+}
+.peer-action-btn{
+  flex:1;display:flex;align-items:center;justify-content:center;gap:5px;
+  height:30px;border-radius:6px;cursor:pointer;
+  background:var(--chrome);border:1px solid var(--border2);border-top:var(--chrome-bevel);
+  color:var(--text2);font-size:9px;
+  font-family:'JetBrains Mono',monospace;letter-spacing:0.06em;text-transform:uppercase;
+  transition:all 0.25s var(--ease2);
+}
+.peer-action-btn i{font-size:13px}
+.peer-action-btn:hover{
+  background:var(--accent-dim);border-color:var(--accent-border);color:var(--accent);
+  box-shadow:var(--chrome-hover);
+}
+.peer-action-btn.danger:hover{
+  background:var(--red-dim);border-color:var(--red-border);color:var(--red);
+}
+/* Если идёт звонок — кнопка Call светится */
+.peer-action-btn.in-call{
+  background:var(--accent-dim);border-color:var(--accent-border);color:var(--accent);
+  animation:callPulse 2s infinite;
+}
+
+/* Секция статистики */
+.peer-stats{
+  display:flex;flex-shrink:0;
+  border-bottom:1px solid var(--border);
+}
+.peer-stat{
+  flex:1;padding:10px 0;
+  display:flex;flex-direction:column;align-items:center;gap:2px;
+}
+.peer-stat+.peer-stat{border-left:1px solid var(--border)}
+.peer-stat-val{font-size:16px;font-weight:700;color:var(--text2)}
+.peer-stat-label{font-size:8px;color:var(--text3);letter-spacing:0.1em;text-transform:uppercase;margin-top:2px}
+
+/* Совместные сообщения (счётчик) */
+.peer-shared-section{
+  flex:1;padding:10px 14px 6px;overflow-y:auto;scrollbar-width:none;
+}
+.peer-shared-label{
+  font-size:8px;letter-spacing:0.12em;color:var(--text3);
+  text-transform:uppercase;margin-bottom:6px;
+}
 </style>
 </head>
 <body>
@@ -2246,9 +2380,9 @@ input[type=range]:focus{outline:none}
         <div id="pending-requests-list"></div>
       </div>
 
-      <!-- DIRECT MESSAGES -->
+      <!-- CONTACTS / DM LIST -->
       <div class="sub-dm-label">
-        DIRECT MSG
+        CONTACTS
         <span class="sub-dm-badge" id="dm-count">0</span>
       </div>
       <div id="dm-list"></div>
@@ -2437,37 +2571,68 @@ input[type=range]:focus{outline:none}
     </div>
   </div>
 
-  <!-- PROFILE PANEL -->
-  <div class="panel-profile">
-    <div class="profile-banner">
-      <div class="profile-av-wrap">
-        <div class="profile-av" id="profile-av" style="background:#0a0d10;color:#00E5FF">??</div>
-      </div>
+  <!-- PEER PANEL — показывает профиль собеседника -->
+  <div class="panel-profile" id="panel-profile">
+
+    <!-- ПУСТОЕ СОСТОЯНИЕ (нет активного DM) -->
+    <div class="peer-panel-empty" id="peer-panel-empty">
+      <div class="peer-empty-icon"><i class="ti ti-message-2"></i></div>
+      <div class="peer-empty-title">No chat open</div>
+      <div class="peer-empty-sub">Select a contact<br>to see their profile</div>
     </div>
-    <div class="profile-body">
-      <div class="profile-name" id="profile-name">...</div>
-      <div class="profile-tag" id="profile-tag">—</div>
-      <div class="profile-status">Active</div>
+
+    <!-- ПРОФИЛЬ СОБЕСЕДНИКА (показывается при открытом DM) -->
+    <div class="peer-panel-active" id="peer-panel-active" style="display:none">
+
+      <!-- Шапка с аватаром -->
+      <div class="peer-banner">
+        <div class="peer-av-wrap">
+          <div class="peer-av" id="peer-av" style="background:#0a0d10;color:#00E5FF">?</div>
+          <div class="peer-online-dot" id="peer-online-dot"></div>
+        </div>
+      </div>
+
+      <!-- Имя + статус -->
+      <div class="peer-body">
+        <div class="peer-name" id="peer-name">—</div>
+        <div class="peer-tag" id="peer-tag">—</div>
+        <div class="peer-status offline" id="peer-status">Offline</div>
+      </div>
+
+      <!-- Кнопки действий -->
+      <div class="peer-actions">
+        <div class="peer-action-btn" id="peer-call-btn" onclick="startCall()" title="Voice call">
+          <i class="ti ti-phone"></i>
+          <span>Call</span>
+        </div>
+        <div class="peer-action-btn danger" id="peer-remove-btn" onclick="removeFriendFromPanel()" title="Remove contact">
+          <i class="ti ti-user-minus"></i>
+        </div>
+      </div>
+
+      <!-- Статистика переписки -->
+      <div class="peer-stats">
+        <div class="peer-stat">
+          <div class="peer-stat-val" id="peer-stat-msgs">0</div>
+          <div class="peer-stat-label">Messages</div>
+        </div>
+        <div class="peer-stat">
+          <div class="peer-stat-val" id="peer-stat-status">—</div>
+          <div class="peer-stat-label">Status</div>
+        </div>
+      </div>
+
     </div>
-    <div class="friends-panel">
-      <div class="friends-panel-label">
-        CONTACTS
-        <span class="friends-panel-count" id="friends-panel-count">0</span>
-      </div>
-      <div id="friends-panel-list">
-        <div class="no-friends">Add contacts via online list</div>
-      </div>
-    </div>
-    <div class="profile-stats">
-      <div class="stat-card">
-        <div class="stat-val" id="stat-online">0</div>
-        <div class="stat-label">Online</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-val" id="stat-msgs">0</div>
-        <div class="stat-label">Messages</div>
-      </div>
-    </div>
+
+    <!-- Скрытые legacy-элементы для JS совместимости -->
+    <span id="stat-online"        style="display:none">0</span>
+    <span id="stat-msgs"          style="display:none">0</span>
+    <span id="profile-av"         style="display:none"></span>
+    <span id="profile-name"       style="display:none"></span>
+    <span id="profile-tag"        style="display:none"></span>
+    <span id="friends-panel-list" style="display:none"></span>
+    <span id="friends-panel-count"style="display:none">0</span>
+
   </div>
 </div>
 
@@ -3799,10 +3964,12 @@ function startCall() {
   showCallOverlay('call-overlay', true);
   document.getElementById('call-solo-hint').style.display = 'none';
 
-  // Update call button
+  // Update call button (header — теперь скрыт, но на всякий случай)
   const btn = document.getElementById('call-btn');
-  btn.classList.add('in-call');
-  btn.innerHTML = '<i class="ti ti-phone-off"></i>';
+  if (btn) { btn.classList.add('in-call'); btn.innerHTML = '<i class="ti ti-phone-off"></i>'; }
+  // Подсвечиваем кнопку звонка в правой панели
+  const pcb = document.getElementById('peer-call-btn');
+  if (pcb) pcb.className = 'peer-action-btn in-call';
   // Show in-header call controls
   const hcc = document.getElementById('header-call-controls');
   if (hcc) hcc.style.display = 'flex';
@@ -4086,6 +4253,9 @@ function endCallUI() {
 
   const btn = document.getElementById('call-btn');
   if (btn) { btn.classList.remove('in-call'); btn.innerHTML = '<i class="ti ti-phone"></i>'; }
+  // Сбрасываем кнопку звонка в правой панели
+  const pcb = document.getElementById('peer-call-btn');
+  if (pcb) { pcb.className = 'peer-action-btn'; pcb.title = 'Voice call'; }
   // Hide in-header call controls
   const hcc = document.getElementById('header-call-controls');
   if (hcc) hcc.style.display = 'none';
@@ -5703,6 +5873,8 @@ function setNavMode(mode) {
       updateChatHeader(ch);
       if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type:'switch_channel', channel: CH_SERVER_MAP[ch] || 'общий' }));
     }
+    // Правая панель — пустое состояние при уходе из DM
+    updateConversationPanel(null);
   }
 }
 
@@ -5803,17 +5975,30 @@ function openDm(tag) {
   dmMode=true; dmWith={tag, username:tag, ...friend}; lastMsgAuthor='';
   document.querySelectorAll('.dm-entry').forEach(el=>el.classList.toggle('active',el.dataset.tag===tag));
   document.getElementById('ch-icon').className = 'ti ti-message chat-ch-icon';
-  document.getElementById('ch-name-display').textContent = friend.name;
+  document.getElementById('ch-name-display').textContent = friend.displayName || friend.name;
   document.getElementById('ch-desc-display').textContent = t.dmDesc;
-  document.getElementById('chat-input').placeholder = t.dmPlaceholder(friend.name);
+  document.getElementById('chat-input').placeholder = t.dmPlaceholder(friend.displayName || friend.name);
   document.getElementById('input-row').classList.add('dm-mode');
-  document.getElementById('call-btn').style.display = 'flex';
+  // Кнопка звонка в хедере — скрыта, т.к. теперь есть peer panel
+  document.getElementById('call-btn').style.display = 'none';
   updateCallPanelPlacement();
   updateSendBtn();
   dmUnread[tag]=0; renderDmList(); updateTabTitle();
+  // Обновляем правую панель — показываем профиль собеседника
+  updateConversationPanel(tag);
   if (ws&&ws.readyState===1) ws.send(JSON.stringify({ type:'dm_history', withUsername:tag }));
+  // Обновляем счётчик сообщений после загрузки истории (через 300ms)
+  setTimeout(() => updateConversationPanel(tag), 350);
   // On narrow screens — hide sidebar so chat is visible
   if (window.innerWidth <= 768) hideMobileSidebar();
+}
+
+// ── Удалить контакт прямо из правой панели ──
+function removeFriendFromPanel() {
+  if (!dmWith) return;
+  const tag = dmWith.tag || dmWith.username;
+  removeFriend(tag);
+  updateConversationPanel(null);
 }
 
 // ── USERS ──
@@ -5901,25 +6086,80 @@ function removeFriend(tag) {
 }
 
 function renderFriendsPanel() {
-  const list = document.getElementById('friends-panel-list');
+  // Правая панель больше не показывает список контактов —
+  // только профиль активного собеседника (updateConversationPanel).
+  // Обновляем только счётчик (legacy compat) и правую панель если DM открыт.
   const tags = Object.keys(friends);
-  document.getElementById('friends-panel-count').textContent = tags.length;
-  if (!tags.length) { list.innerHTML = `<div class="no-friends">${t.noFriends}</div>`; return; }
-  list.innerHTML = '';
-  tags.forEach(tag => {
-    const f = friends[tag];
-    const div = document.createElement('div');
-    div.className = 'friend-card';
-    div.onclick = () => openDm(tag);
-    div.innerHTML = `
-      <div class="friend-card-av" style="${avStyle(f.color, f.avatar, f.name)}">${avHtml(f.name, f.color, f.avatar)}</div>
-      <div style="flex:1;min-width:0">
-        <div class="friend-card-name">${esc(f.displayName || f.name)}</div>
-        <div class="friend-card-status ${f.online?'online':'offline'}">${f.online?'online':'offline'}</div>
-      </div>
-      <button class="friend-remove" onclick="event.stopPropagation();removeFriend('${esc(tag)}')"><i class="ti ti-x"></i></button>`;
-    list.appendChild(div);
-  });
+  const countEl = document.getElementById('friends-panel-count');
+  if (countEl) countEl.textContent = tags.length;
+  // Если сейчас открыт DM — обновляем статус в правой панели
+  if (dmMode && dmWith) {
+    updateConversationPanel(dmWith.tag || dmWith.username);
+  }
+}
+
+// ── CONVERSATION PANEL — профиль собеседника в правой панели ──
+function updateConversationPanel(tag) {
+  const emptyEl  = document.getElementById('peer-panel-empty');
+  const activeEl = document.getElementById('peer-panel-active');
+  if (!emptyEl || !activeEl) return;
+
+  if (!tag || !friends[tag]) {
+    // Нет активного DM — показываем пустое состояние
+    emptyEl.style.display  = 'flex';
+    activeEl.style.display = 'none';
+    // Скрываем кнопку звонка в хедере
+    const callBtn = document.getElementById('call-btn');
+    if (callBtn) callBtn.style.display = 'none';
+    return;
+  }
+
+  const f = friends[tag];
+  emptyEl.style.display  = 'none';
+  activeEl.style.display = 'flex';
+
+  // Аватар
+  const avEl = document.getElementById('peer-av');
+  if (avEl) {
+    if (f.avatar) {
+      avEl.innerHTML = `<img class="av-img" src="${f.avatar}" style="width:100%;height:100%;object-fit:cover">`;
+      avEl.style.cssText = 'padding:0;background:' + colorToBg(f.color);
+    } else {
+      avEl.textContent = (f.displayName || f.name || tag)[0].toUpperCase();
+      avEl.style.cssText = `background:${colorToBg(f.color)};color:${f.color};padding:`;
+    }
+  }
+
+  // Онлайн-точка
+  const dotEl = document.getElementById('peer-online-dot');
+  if (dotEl) dotEl.className = 'peer-online-dot' + (f.online ? ' online' : '');
+
+  // Имя и тег
+  const nameEl   = document.getElementById('peer-name');
+  const tagEl    = document.getElementById('peer-tag');
+  const statusEl = document.getElementById('peer-status');
+  if (nameEl)   nameEl.textContent   = f.displayName || f.name || tag;
+  if (tagEl)    tagEl.textContent    = tag;
+  if (statusEl) {
+    statusEl.textContent  = f.online ? 'Online' : 'Offline';
+    statusEl.className    = 'peer-status ' + (f.online ? 'online' : 'offline');
+  }
+
+  // Статус-статистика
+  const statStatusEl = document.getElementById('peer-stat-status');
+  if (statStatusEl) statStatusEl.textContent = f.online ? 'Online' : 'Away';
+
+  // Счётчик сообщений этой переписки (считаем из DOM)
+  const msgCount = document.querySelectorAll('#messages .msg').length;
+  const statMsgsEl = document.getElementById('peer-stat-msgs');
+  if (statMsgsEl) statMsgsEl.textContent = msgCount;
+
+  // Кнопка звонка — активна ли она сейчас
+  const peerCallBtn = document.getElementById('peer-call-btn');
+  if (peerCallBtn) {
+    peerCallBtn.className = 'peer-action-btn' + (callActive ? ' in-call' : '');
+    peerCallBtn.title = callActive ? 'In call' : 'Voice call';
+  }
 }
 
 function renderDmList() {
@@ -5975,17 +6215,8 @@ function loadAvatar() {
       dockEl.style.padding = '';
     }
   }
-  // profile panel avatar
-  const profEl = document.getElementById('profile-av');
-  if (profEl) {
-    if (av) {
-      profEl.innerHTML = `<img class="av-img" src="${av}">`;
-      profEl.style.padding = '0';
-    } else {
-      profEl.textContent = initials;
-      profEl.style.padding = '';
-    }
-  }
+  // profile-av теперь скрытый stub — не обновляем
+  // (правая панель показывает собеседника, не нас)
   // settings preview
   const prevEl = document.getElementById('avatar-preview');
   if (prevEl) {
@@ -6059,23 +6290,24 @@ function removeAvatar() {
 function updateMyProfile() {
   const initials = me.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
   const av = localStorage.getItem('grid_avatar');
-  // Only set color/initials on elements that don't have an avatar image
-  ['my-avatar-btn','profile-av'].forEach(id => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    // Don't overwrite if avatar is already shown as an image
+  // Обновляем только dock-аватар — profile-av теперь скрытый stub
+  const dockEl = document.getElementById('my-avatar-btn');
+  if (dockEl) {
     if (!av) {
-      el.textContent = initials;
-      el.style.color = me.color;
-      el.style.background = colorToBg(me.color);
+      dockEl.textContent = initials;
+      dockEl.style.color = me.color;
+      dockEl.style.background = colorToBg(me.color);
     } else {
-      el.style.color = me.color;
-      el.style.background = colorToBg(me.color);
+      dockEl.style.color = me.color;
+      dockEl.style.background = colorToBg(me.color);
     }
-    if (id==='my-avatar-btn') el.style.borderColor = me.color;
-  });
-  document.getElementById('profile-name').textContent = me.name;
-  document.getElementById('profile-tag').textContent = me.name;
+    dockEl.style.borderColor = me.color;
+  }
+  // profile-name / profile-tag — скрытые stubs, просто обновляем текст для compat
+  const pn = document.getElementById('profile-name');
+  const pt = document.getElementById('profile-tag');
+  if (pn) pn.textContent = me.name;
+  if (pt) pt.textContent = me.name;
   document.getElementById('setting-name').value = me.name;
   document.getElementById('setting-tag-display').textContent = me.name;
   // Always call loadAvatar last so it wins over initials
