@@ -8288,155 +8288,134 @@ window.setThemeMode = function(mode) {
 <!-- ── WAVE EFFECT + AWAY STATUS + SETTINGS ── -->
 <script>
 // ══════════════════════════════════════════════════
-//  WAVE RIPPLE EFFECT
+//  WAVE RIPPLE EFFECT — emits FROM element on hover
 // ══════════════════════════════════════════════════
-let waveStrength = 50;
-let waveLift = 4;
-let hoverStyle = localStorage.getItem('grid_hover_style') || 'classic';
-let waveCtx = null;
-let waves = [];
-let waveAnimId = null;
+let waveStrength = parseInt(localStorage.getItem('grid_wave_strength') || '50');
+let waveLift     = parseInt(localStorage.getItem('grid_wave_lift') || '4');
+let hoverStyle   = localStorage.getItem('grid_hover_style') || 'classic';
+let waveCtx      = null;
+let waves        = [];
+let waveAnimId   = null;
 
 function initWaveCanvas() {
   const canvas = document.getElementById('wave-canvas');
   if (!canvas) return;
   waveCtx = canvas.getContext('2d');
-  function resize() {
-    canvas.width  = window.innerWidth;
-    canvas.height = window.innerHeight;
-  }
+  function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
   resize();
   window.addEventListener('resize', resize);
 }
 
-function spawnWave(x, y) {
-  waves.push({ x, y, r: 0, maxR: Math.max(window.innerWidth, window.innerHeight) * 1.2, opacity: waveStrength / 100 * 0.18, born: Date.now() });
+function spawnWaveFromElement(el) {
+  const rect = el.getBoundingClientRect();
+  const x = rect.left + rect.width  / 2;
+  const y = rect.top  + rect.height / 2;
+  const maxR = Math.hypot(rect.width, rect.height) * 0.5 + 160 + waveStrength * 1.2;
+  waves.push({ x, y, r: 0, maxR, opacity: waveStrength / 100 * 0.5, el });
   if (!waveAnimId) animateWaves();
 }
 
 function animateWaves() {
-  if (!waveCtx) return;
+  if (!waveCtx) { waveAnimId = null; return; }
   const canvas = document.getElementById('wave-canvas');
   waveCtx.clearRect(0, 0, canvas.width, canvas.height);
-  const speed = 4 + waveStrength * 0.06;
+  const speed = 3 + waveStrength * 0.04;
   waves = waves.filter(w => {
     w.r += speed;
     const progress = w.r / w.maxR;
-    const opacity = w.opacity * (1 - progress);
-    if (opacity < 0.002) return false;
+    const opacity  = w.opacity * (1 - progress * progress);
+    if (opacity < 0.003) {
+      if (w.el) w.el.style.transform = '';
+      return false;
+    }
     waveCtx.beginPath();
     waveCtx.arc(w.x, w.y, w.r, 0, Math.PI * 2);
     waveCtx.strokeStyle = `rgba(0,229,255,${opacity})`;
-    waveCtx.lineWidth = 1.5;
+    waveCtx.lineWidth   = 1.5;
     waveCtx.stroke();
-    // Second inner ring
-    if (w.r > 30) {
+    if (w.r > 20) {
       waveCtx.beginPath();
-      waveCtx.arc(w.x, w.y, w.r * 0.6, 0, Math.PI * 2);
-      waveCtx.strokeStyle = `rgba(123,97,255,${opacity * 0.5})`;
-      waveCtx.lineWidth = 0.8;
+      waveCtx.arc(w.x, w.y, w.r * 0.55, 0, Math.PI * 2);
+      waveCtx.strokeStyle = `rgba(123,97,255,${opacity * 0.4})`;
+      waveCtx.lineWidth   = 0.8;
       waveCtx.stroke();
+    }
+    if (w.el && waveLift > 0 && progress < 0.25) {
+      const lift = waveLift * (1 - progress / 0.25);
+      w.el.style.transform = `translateY(-${lift.toFixed(1)}px)`;
+    } else if (w.el && progress >= 0.25) {
+      w.el.style.transform = '';
     }
     return true;
   });
-
-  // Apply lift effect to elements near wave fronts
-  if (waveLift > 0) {
-    const liftEls = document.querySelectorAll('.wave-hover');
-    liftEls.forEach(el => {
-      const rect = el.getBoundingClientRect();
-      const cx = rect.left + rect.width / 2;
-      const cy = rect.top  + rect.height / 2;
-      let maxDisp = 0;
-      waves.forEach(w => {
-        const dist = Math.hypot(cx - w.x, cy - w.y);
-        const frontDist = Math.abs(dist - w.r);
-        if (frontDist < 40) {
-          const strength = (1 - frontDist / 40) * waveLift * (w.opacity / 0.18);
-          maxDisp = Math.max(maxDisp, strength);
-        }
-      });
-      el.style.transform = maxDisp > 0.1 ? `translateY(-${maxDisp.toFixed(1)}px) scale(${1 + maxDisp * 0.003})` : '';
-    });
-  }
-
   if (waves.length > 0) {
     waveAnimId = requestAnimationFrame(animateWaves);
   } else {
     waveAnimId = null;
-    // Reset transforms
     document.querySelectorAll('.wave-hover').forEach(el => el.style.transform = '');
   }
 }
 
-// Mouse move — spawn waves
-let lastWaveSpawn = 0;
-document.addEventListener('mousemove', (e) => {
-  if (hoverStyle !== 'wave') return;
-  const now = Date.now();
-  if (now - lastWaveSpawn < 120) return; // throttle
-  lastWaveSpawn = now;
-  spawnWave(e.clientX, e.clientY);
-});
-
-// Click — big wave
-document.addEventListener('click', (e) => {
-  if (hoverStyle !== 'wave') return;
-  const bigWave = { x: e.clientX, y: e.clientY, r: 0, maxR: Math.max(window.innerWidth, window.innerHeight) * 1.4, opacity: waveStrength / 100 * 0.35, born: Date.now() };
-  waves.push(bigWave);
-  if (!waveAnimId) animateWaves();
-});
-
-// Add wave-hover class to interactive elements
-function applyWaveClasses() {
-  const selectors = [
-    '.msg', '.dm-entry', '.msg-img-attach', '.msg-file',
-    'button', '.lang-btn', '.cbar-btn', '.call-btn',
-    '.friend-card', '.channel-item', '.voice-ch-item',
-    '.emoji-btn', '.ctx-item', '.tab-btn', '.modal-tab',
-    '.notif', '.chat-call-widget'
-  ];
-  selectors.forEach(sel => {
-    document.querySelectorAll(sel).forEach(el => el.classList.add('wave-hover'));
+function attachWaveHover(el) {
+  if (el._waveAttached) return;
+  el._waveAttached = true;
+  el.classList.add('wave-hover');
+  let waveTimer = null;
+  el.addEventListener('mouseenter', () => {
+    if (hoverStyle !== 'wave') return;
+    spawnWaveFromElement(el);
+    waveTimer = setInterval(() => { if (hoverStyle === 'wave') spawnWaveFromElement(el); }, 900);
+  });
+  el.addEventListener('mouseleave', () => {
+    clearInterval(waveTimer);
+    el.style.transform = '';
   });
 }
 
-// Re-apply when DOM changes
-const waveObserver = new MutationObserver(() => {
-  if (hoverStyle === 'wave') applyWaveClasses();
-});
+function applyWaveClasses() {
+  const selectors = [
+    '.msg', '.dm-entry', '.msg-img-attach', '.msg-file',
+    'button:not([disabled])', '.lang-btn', '.cbar-btn', '.call-btn',
+    '.channel-item', '.voice-ch-item', '.ctx-item', '.modal-tab',
+    '.chat-call-widget', '.peer-action-btn', '.admin-btn'
+  ];
+  selectors.forEach(sel => document.querySelectorAll(sel).forEach(attachWaveHover));
+}
+
+const waveObserver = new MutationObserver(() => { if (hoverStyle === 'wave') applyWaveClasses(); });
 waveObserver.observe(document.body, { childList: true, subtree: true });
 
 function setHoverStyle(style) {
   hoverStyle = style;
   localStorage.setItem('grid_hover_style', style);
-  const classicCard = document.getElementById('hover-card-classic');
-  const waveCard    = document.getElementById('hover-card-wave');
-  const waveSettings = document.getElementById('wave-settings');
+  const cc = document.getElementById('hover-card-classic');
+  const wc = document.getElementById('hover-card-wave');
+  const ws = document.getElementById('wave-settings');
   if (style === 'wave') {
     document.body.classList.add('wave-effect');
-    if (classicCard) { classicCard.style.borderColor = 'var(--border2)'; classicCard.style.background = 'transparent'; classicCard.style.color = 'var(--text2)'; }
-    if (waveCard)    { waveCard.style.borderColor = 'var(--accent-border)'; waveCard.style.background = 'var(--accent-dim)'; waveCard.style.color = 'var(--accent)'; }
-    if (waveSettings) waveSettings.style.display = 'block';
+    if (cc) { cc.style.borderColor='var(--border2)'; cc.style.background='transparent'; cc.style.color='var(--text2)'; }
+    if (wc) { wc.style.borderColor='var(--accent-border)'; wc.style.background='var(--accent-dim)'; wc.style.color='var(--accent)'; }
+    if (ws) ws.style.display='block';
     applyWaveClasses();
   } else {
     document.body.classList.remove('wave-effect');
     waves = [];
-    if (classicCard) { classicCard.style.borderColor = 'var(--accent-border)'; classicCard.style.background = 'var(--accent-dim)'; classicCard.style.color = 'var(--accent)'; }
-    if (waveCard)    { waveCard.style.borderColor = 'var(--border2)'; waveCard.style.background = 'transparent'; waveCard.style.color = 'var(--text2)'; }
-    if (waveSettings) waveSettings.style.display = 'none';
-    document.querySelectorAll('.wave-hover').forEach(el => { el.classList.remove('wave-hover'); el.style.transform = ''; });
+    if (cc) { cc.style.borderColor='var(--accent-border)'; cc.style.background='var(--accent-dim)'; cc.style.color='var(--accent)'; }
+    if (wc) { wc.style.borderColor='var(--border2)'; wc.style.background='transparent'; wc.style.color='var(--text2)'; }
+    if (ws) ws.style.display='none';
+    document.querySelectorAll('.wave-hover').forEach(el => el.style.transform='');
   }
 }
 
 function applyWaveSettings() {
-  const strengthEl = document.getElementById('wave-strength-slider');
-  const liftEl     = document.getElementById('wave-lift-slider');
-  if (strengthEl) { waveStrength = parseInt(strengthEl.value); document.getElementById('wave-strength-val').textContent = waveStrength + '%'; }
-  if (liftEl)     { waveLift = parseInt(liftEl.value); document.getElementById('wave-lift-val').textContent = waveLift + 'px'; }
+  const sEl = document.getElementById('wave-strength-slider');
+  const lEl = document.getElementById('wave-lift-slider');
+  if (sEl) { waveStrength = parseInt(sEl.value); document.getElementById('wave-strength-val').textContent = waveStrength + '%'; }
+  if (lEl) { waveLift = parseInt(lEl.value); document.getElementById('wave-lift-val').textContent = waveLift + 'px'; }
   localStorage.setItem('grid_wave_strength', waveStrength);
   localStorage.setItem('grid_wave_lift', waveLift);
 }
+
 
 // Init wave settings from storage
 (function() {
