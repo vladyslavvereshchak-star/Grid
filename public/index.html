@@ -3343,31 +3343,16 @@ let peerConnections = {};
 let audioElements = {};
 
 // ── ICE SERVERS — базовая конфигурация ──
-// Дополнительные TURN серверы загружаются с сервера через /api/ice-servers
+// ICE конфиг — TURN серверы загружаются динамически с /api/ice-servers (Metered)
 const ICE_CONFIG = {
   iceCandidatePoolSize: 10,
   iceTransportPolicy: 'all',
   iceServers: [
-    // Google STUN
+    // Google STUN — всегда работают
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
     // Cloudflare STUN
     { urls: 'stun:stun.cloudflare.com:3478' },
-    // Metered TURN (бесплатный тир — 50GB/месяц, работает)
-    {
-      urls: [
-        'turn:relay1.expressturn.com:3478',
-        'turn:relay1.expressturn.com:3478?transport=tcp',
-      ],
-      username: 'efVGPPGXN2WEXDMWBV',
-      credential: 'zLqOOp5GVtFJJU6R'
-    },
-    // Cloudflare TURN (требует аккаунт, но fallback)
-    { urls: 'stun:stun.stunprotocol.org:3478' },
-    // Резервный публичный TURN
-    { urls: 'turn:freestun.net:3479',  username: 'free', credential: 'free' },
-    { urls: 'turns:freestun.net:5350', username: 'free', credential: 'free' },
   ]
 };
 
@@ -3971,7 +3956,8 @@ function handleMsg(data) {
           break;
         case 'mute_mic':
           // Force mute mic — user can unmute themselves
-          if (localStream) localStream.getAudioTracks().forEach(t => t.enabled = false);
+          if (callStream) callStream.getAudioTracks().forEach(t => t.enabled = false);
+          else if (localStream) localStream.getAudioTracks().forEach(t => t.enabled = false);
           callMuted = true;
           updateMuteUI();
           showAdminAlert('🔇 MUTED', data.msg, '#f06a8a');
@@ -4825,7 +4811,9 @@ function toggleCallMute() {
   const hIco = document.getElementById('header-mute-icon');
   if (hBtn) { hBtn.style.color = callMuted ? 'var(--red)' : ''; hBtn.style.borderColor = callMuted ? 'var(--red-border)' : ''; hBtn.style.background = callMuted ? 'var(--red-dim)' : ''; }
   if (hIco) hIco.className = callMuted ? 'ti ti-microphone-off' : 'ti ti-microphone';
-  if (localStream) localStream.getAudioTracks().forEach(t => t.enabled = !callMuted);
+  // Use callStream (DM call) — localStream is for voice channels
+  if (callStream) callStream.getAudioTracks().forEach(t => t.enabled = !callMuted);
+  else if (localStream) localStream.getAudioTracks().forEach(t => t.enabled = !callMuted);
   if (callStream) {
     callStream.getAudioTracks().forEach(t => t.enabled = !callMuted);
     // Если mute — gate не должен его перебить
@@ -4993,6 +4981,8 @@ async function startCallWebRTC(peerUsername, isInitiator) {
   callPc = new RTCPeerConnection(ICE_CONFIG);
   callStream.getTracks().forEach(t => callPc.addTrack(t, callStream));
   callStream.getAudioTracks().forEach(t => t.enabled = !callMuted);
+  // Save raw stream reference BEFORE noise gate — speaking detection uses this
+  window._rawCallStream = callStream;
 
   // ── УМНЫЙ NOISE GATE (AEC-safe) ───────────────────────────────────────────
   // Анализируем уровень в read-only AudioContext (НЕ трогаем сам поток).
@@ -5018,28 +5008,36 @@ async function startCallWebRTC(peerUsername, isInitiator) {
     src.connect(analyser);
     // src → analyser ТОЛЬКО, никаких dest → WebRTC
 
-    const MARGIN_DB     = 10;   // порог = ambient + 10dB
-    const RELEASE_MS    = 220;  // задержка закрытия
+    const MARGIN_DB     = 8;    // порог = ambient + 8dB (был 10 — слишком много)
+    const RELEASE_MS    = 300;  // задержка закрытия
     const CALIBR_MS     = 1500; // время калибровки фона
-    const ADAPT_DECAY   = 0.998;// как быстро ambient снижается (медленно)
-    const ADAPT_RISE    = 0.05; // как быстро ambient растёт (быстро)
+    const ADAPT_DECAY   = 0.998;
+    const ADAPT_RISE    = 0.05;
 
     let ambientDb    = -60;
-    let gateOpen     = false;
+    let gateOpen     = true;  // ВАЖНО: начинаем открытым пока не откалибруемся
     let closeTimer   = null;
     let calibrating  = true;
     let calibSamples = [];
 
-    // Пользовательский offset из настроек (слайдер 0–100 → -8…+12 dB добавки)
+    // Пользовательский offset — более мягкий диапазон
     const getUserMarginOffset = () => {
       const pct = parseInt(localStorage.getItem('grid_noisegate_threshold') || '15');
-      return (pct / 100) * 20 - 8; // 0% → -8dB (мягкий), 100% → +12dB (жёсткий)
+      return (pct / 100) * 12 - 4; // 0% → -4dB (мягкий), 100% → +8dB (жёсткий)
     };
 
+    // Проверяем что noise gate вообще включён
+    const isGateEnabled = () => localStorage.getItem('grid_noisegate_enabled') !== 'false';
+
     const applyGate = (open) => {
-      if (callMuted) return; // уважаем mute
-      const tracks = callStream.getAudioTracks();
-      tracks.forEach(t => { t.enabled = open; });
+      if (callMuted) return;
+      if (!isGateEnabled()) {
+        // Gate выключен — всегда открыт
+        callStream.getAudioTracks().forEach(t => { t.enabled = true; });
+        gateOpen = true;
+        return;
+      }
+      callStream.getAudioTracks().forEach(t => { t.enabled = open; });
       gateOpen = open;
     };
 
@@ -5113,13 +5111,12 @@ async function startCallWebRTC(peerUsername, isInitiator) {
     if (e.candidate) wsSend({ type: 'call_ice', to: peerUsername, candidate: e.candidate });
   };
 
-  // Monitor ICE connection — log state changes for debugging
   callPc.oniceconnectionstatechange = () => {
     const s = callPc?.iceConnectionState;
     console.log('[GRID ICE] iceConnectionState:', s);
     if (s === 'failed') {
       console.warn('[GRID ICE] ICE failed — attempting ICE restart');
-      if (isInitiator && callPc.signalingState === 'stable') {
+      if (isInitiator && callPc && callPc.signalingState === 'stable') {
         callPc.restartIce();
         callPc.createOffer({ iceRestart: true }).then(offer => {
           offer.sdp = patchOpusSDP(offer.sdp);
@@ -5128,9 +5125,6 @@ async function startCallWebRTC(peerUsername, isInitiator) {
           wsSend({ type: 'call_offer', to: peerUsername, sdp: callPc.localDescription });
         }).catch(e => console.warn('[GRID ICE] ICE restart failed:', e));
       }
-    }
-    if (s === 'disconnected') {
-      console.warn('[GRID ICE] ICE disconnected — waiting 5s before restart');
     }
   };
 
@@ -5204,26 +5198,8 @@ async function startCallWebRTC(peerUsername, isInitiator) {
       const stLbl = document.getElementById('call-state-label');
       if (stLbl) stLbl.textContent = 'Connected · Audio live';
       applyHighBitrate(callPc);
-
-      // ── Safety net: проверяем что все transceivers sendrecv ──
-      // Если Chromium всё равно сбросил в recvonly — чиним через renegotiation
-      let needsRenegotiation = false;
-      callPc.getTransceivers().forEach(tc => {
-        if (tc.direction !== 'sendrecv') {
-          console.warn('[GRID WebRTC] Transceiver not sendrecv after connect! direction:', tc.direction, '→ fixing');
-          tc.direction = 'sendrecv';
-          needsRenegotiation = true;
-        }
-      });
-      if (needsRenegotiation && callPc.signalingState === 'stable') {
-        // Пересогласовываем SDP чтобы применить sendrecv
-        callPc.createOffer().then(offer => {
-          offer.sdp = patchOpusSDP(offer.sdp);
-          return callPc.setLocalDescription(offer);
-        }).then(() => {
-          wsSend({ type: 'call_offer', to: callPeer ? callPeer.username : '', sdp: callPc.localDescription });
-        }).catch(e => console.warn('[GRID WebRTC] Renegotiation failed:', e));
-      }
+      // Ensure tracks are enabled
+      if (callStream) callStream.getAudioTracks().forEach(t => { if (!callMuted) t.enabled = true; });
       const bar = document.getElementById('call-inline-bar');
       if (bar) bar.classList.add('connected');
       const lbl = document.getElementById('cbar-status-label');
@@ -5231,8 +5207,6 @@ async function startCallWebRTC(peerUsername, isInitiator) {
       const stageStatus = document.getElementById('chat-call-status-label');
       if (stageStatus) stageStatus.textContent = 'IN CALL';
       markWidgetConnected();
-
-      // ── Гарантированно показываем connected UI и запускаем detection ──
       if (typeof showConnectedUI === 'function') {
         setTimeout(showConnectedUI, 200);
       }
@@ -5331,6 +5305,7 @@ async function handleCallIce(data) {
 function closeCallWebRTC() {
   if (callPc) { callPc.close(); callPc = null; }
   if (callStream) { callStream.getTracks().forEach(t => { t.enabled = true; t.stop(); }); callStream = null; }
+  window._rawCallStream = null;
   // Noise gate cleanup
   if (window._callNoiseGateInterval) { clearInterval(window._callNoiseGateInterval); window._callNoiseGateInterval = null; }
   window._callNoiseGateOpen = false;
@@ -6817,11 +6792,14 @@ async function startSpeakingDetection() {
   resizeViz(vizPeer);
 
   // ── МОЙ МИК → analyser ──
-  if (callStream) {
+  // ВАЖНО: используем _rawCallStream если есть — это поток ДО noise gate
+  // Gate делает t.enabled=false что обнуляет данные в track, но не в source
+  const myStream = window._rawCallStream || callStream;
+  if (myStream) {
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
       if (ctx.state !== 'running') await ctx.resume();
-      const src = ctx.createMediaStreamSource(callStream);
+      const src = ctx.createMediaStreamSource(myStream);
       speakAnalyserMe = ctx.createAnalyser();
       speakAnalyserMe.fftSize = 256;
       speakAnalyserMe.smoothingTimeConstant = 0.72;
@@ -6866,7 +6844,7 @@ async function startSpeakingDetection() {
     // Update "speaking" status text + card border
     if (speakBufMe) {
       const avg = speakBufMe.slice(4, 60).reduce((a, b) => a + b, 0) / 56;
-      const isSpeaking = avg > 10 && !callMuted;
+      const isSpeaking = avg > 5 && !callMuted; // 5 instead of 10 — more sensitive
       const meCard = document.getElementById('chat-call-me-card');
       if (meCard) meCard.classList.toggle('speaking', isSpeaking);
       const st = document.getElementById('chat-call-sub-me');
