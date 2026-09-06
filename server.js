@@ -118,6 +118,9 @@ async function initDB() {
       time VARCHAR(10),
       created_at TIMESTAMP DEFAULT NOW()
     );
+    CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channel, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_dm_messages_users ON dm_messages(from_user, to_user, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_dm_messages_to ON dm_messages(to_user, created_at DESC);
   `);
   console.log('✅ БД готова');
 }
@@ -244,6 +247,11 @@ app.post('/api/avatar', profileLimiter.middleware(), async (req, res) => {
 // ── ICE Servers — Metered TURN + fallback ──────────────────────
 // Set in Railway: METERED_SECRET_KEY, METERED_DOMAIN
 app.get('/api/ice-servers', async (req, res) => {
+  // Require valid JWT — prevents strangers from burning our Metered quota
+  const auth = req.headers.authorization;
+  if (!auth || !auth.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' });
+  try { jwt.verify(auth.slice(7), JWT_SECRET); } catch(e) { return res.status(401).json({ error: 'Invalid token' }); }
+
   const servers = [];
 
   if (process.env.METERED_SECRET_KEY && process.env.METERED_DOMAIN) {

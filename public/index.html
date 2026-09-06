@@ -3232,6 +3232,7 @@ input[type=range]:focus{outline:none}
     </div>
   </div>
 </div>
+<div class="friend-req" id="friend-req">
   <div class="friend-req-title">⟶ Contact Request</div>
   <div class="friend-req-name" id="friend-req-name">—</div>
   <div class="friend-req-btns">
@@ -3358,20 +3359,24 @@ const ICE_CONFIG = {
 
 // ── Загружаем TURN с сервера (Railway env vars → TURN_URL/TURN_USERNAME/TURN_CREDENTIAL) ──
 // Это позволяет добавить нормальные платные TURN без пересборки клиента
-(async function fetchIceServers() {
+async function fetchIceServers() {
   try {
-    const res = await fetch('/api/ice-servers');
+    const token = localStorage.getItem('grid_token');
+    if (!token) return; // not logged in yet — will retry after welcome
+    const res = await fetch('/api/ice-servers', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
     if (!res.ok) return;
     const data = await res.json();
     if (data.iceServers && data.iceServers.length) {
-      // Добавляем серверные серверы ПЕРВЫМИ — они приоритетнее
       ICE_CONFIG.iceServers = [...data.iceServers, ...ICE_CONFIG.iceServers];
       console.log('[GRID ICE] Loaded', data.iceServers.length, 'server-side ICE servers');
     }
   } catch(e) {
-    // Не критично — используем встроенные серверы
+    // Не критично — используем встроенные STUN серверы
   }
-})();
+}
+fetchIceServers();
 
 // ── VOICE DEVICE SETTINGS ──
 let voiceInputDeviceId = localStorage.getItem('grid_input_device') || '';
@@ -3729,6 +3734,8 @@ function handleMsg(data) {
       }
       // Request lastSeen for all friends
       setTimeout(() => { if (typeof requestLastSeen === 'function') requestLastSeen(); }, 1000);
+      // Refresh ICE servers with valid token
+      fetchIceServers();
       break;
 
     case 'message': {
@@ -8471,6 +8478,20 @@ window._welcomeInit = function() {
 };
 
 // Apply on load
+window.addEventListener('DOMContentLoaded', () => {
+  // Init wave sliders from localStorage
+  const savedStrength = parseInt(localStorage.getItem('grid_wave_strength') || '50');
+  const savedLift     = parseInt(localStorage.getItem('grid_wave_lift')     || '4');
+  const sEl = document.getElementById('wave-strength-slider');
+  const lEl = document.getElementById('wave-lift-slider');
+  const sVal = document.getElementById('wave-strength-val');
+  const lVal = document.getElementById('wave-lift-val');
+  if (sEl) sEl.value = savedStrength;
+  if (lEl) lEl.value = savedLift;
+  if (sVal) sVal.textContent = savedStrength + '%';
+  if (lVal) lVal.textContent = savedLift + 'px';
+});
+
 window.addEventListener('load', () => {
   initWaveCanvas();
   setHoverStyle(hoverStyle);
